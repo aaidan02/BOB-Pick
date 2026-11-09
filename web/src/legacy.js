@@ -1,4 +1,5 @@
 import {appFetch,directionsUrl} from './bridge';
+import {hasMapCoordinates} from './naver';
 
   const el=id=>document.getElementById(id);
   function showDetail(node,value){
@@ -86,7 +87,7 @@ import {appFetch,directionsUrl} from './bridge';
     showDetail(node.querySelector('.tags'),[data.get('_categories'),data.get('_menuForms')].filter(Boolean).join(' / '));
     showDetail(node.querySelector('.address'),[data.get('주소'),data.get('상세주소')].filter(Boolean).join(' '));
     showDetail(node.querySelector('.phone'),data.get('전화번호'));showDetail(node.querySelector('.hours'),data.get('운영시간정보'));
-    node.querySelector('.map-link').href=directionsUrl({name:data.get('음식점명'),latitude:data.get('위도')===''?null:Number(data.get('위도')),longitude:data.get('경도')===''?null:Number(data.get('경도'))});
+    node.querySelector('.map-link').href=directionsUrl({name:data.get('음식점명'),address:data.get('주소'),latitude:data.get('위도')===''?null:Number(data.get('위도')),longitude:data.get('경도')===''?null:Number(data.get('경도'))});
 const save=node.querySelector('.save-menu');save.hidden=!data.get('_menuId');save.dataset.menuId=data.get('_menuId');window.dispatchEvent(new Event('recommendations-rendered'));
   }
   function showPickStatus(){
@@ -135,7 +136,7 @@ const save=node.querySelector('.save-menu');save.hidden=!data.get('_menuId');sav
     if(mapError)return;
     const shown=slots.filter(slot=>slot.data),valid=shown.filter(({data})=>{
       const a=data.get('위도'),b=data.get('경도'),lat=Number(a),lng=Number(b);
-      return a?.trim()&&b?.trim()&&Number.isFinite(lat)&&Number.isFinite(lng)&&Math.abs(lat)<=90&&Math.abs(lng)<=180;
+      return a?.trim()&&b?.trim()&&hasMapCoordinates({name:data.get('음식점명'),latitude:lat,longitude:lng});
     });
     const ids=new Set(valid.map(({data})=>data.get('음식점아이디')));
     markers.forEach((marker,id)=>{if(!ids.has(id)){marker.setMap(null);markers.delete(id);}});
@@ -157,14 +158,17 @@ const save=node.querySelector('.save-menu');save.hidden=!data.get('_menuId');sav
         :'추천 가게 '+valid.length+'곳의 위치를 표시했습니다.';
     }catch{failMap('위치 표시 실패. 네이버 길찾기를 이용해 주세요.');}
   }
+  let mapAuthFailed=false;
   const mapTimeout=setTimeout(()=>failMap('지도 연결이 지연됩니다. 네이버 길찾기를 이용해 주세요.'),12000);
   window.navermap_authFailure=()=>{
+    mapAuthFailed=true;
     clearTimeout(mapTimeout);failMap('지도를 불러오지 못했습니다. 네이버 길찾기를 이용해 주세요.');
   };
   const sdk=document.createElement('script');
   sdk.src='https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId='+encodeURIComponent(import.meta.env.VITE_NAVER_MAP_CLIENT_ID||'');
   sdk.onload=()=>{
-    clearTimeout(mapTimeout);if(mapError)return;
+    clearTimeout(mapTimeout);if(mapAuthFailed)return;
+    mapError=false;
     try{
       map=new naver.maps.Map('map',{center:new naver.maps.LatLng(36.3504,127.3845),zoom:14,zoomControl:true});
       if(mapError)return;el('map-status').textContent='음식점을 뽑으면 위치를 표시합니다.';showPosition();

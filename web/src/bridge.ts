@@ -1,5 +1,6 @@
 import {client,rpc} from './supabase';
 import {legacyRecommendation,type Candidate} from '../../supabase/functions/_shared/recommendation';
+export {directionsUrl} from './naver';
 
 export function manualFilter(q:URLSearchParams){
   const filter:Record<string,unknown>={checkHours:q.get('time')!=='all',categories:q.get('category')?[q.get('category')]:[],forms:q.get('form')?[q.get('form')]:[]};
@@ -43,9 +44,4 @@ export async function appFetch(url:string,options:RequestInit={}):Promise<Respon
     if(options.signal?.aborted)throw error;
     return new Response(error instanceof Error?error.message:'요청을 처리하지 못했습니다.',{status:400});
   }
-}
-export function directionsUrl(r:{name:string;latitude:number|null;longitude:number|null}){
-  if(r.latitude==null||r.longitude==null)return 'https://map.naver.com/p/search/'+encodeURIComponent(r.name);
-  const x=r.longitude*20037508.34/180,y=Math.log(Math.tan((90+r.latitude)*Math.PI/360))/(Math.PI/180)*20037508.34/180;
-  return `https://map.naver.com/p/directions/-/${x.toFixed(6)},${y.toFixed(6)},${encodeURIComponent(r.name)},,PLACE_POI/-/transit?c=15.00,0,0,0,dh`;
 }

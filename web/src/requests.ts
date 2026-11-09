@@ -3,14 +3,33 @@ import {admin,user,requireUser} from './auth';
 import {action,date,el,input,message,node,friendly} from './ui';
 const labels:Record<string,string>={correction:'정보 수정',registration:'음식점 등록',promotion:'홍보',pending:'대기',approved:'승인',rejected:'반려'};
 const fieldLabels:Record<string,string>={name:'음식점 이름',address:'주소',phone:'전화번호',latitude:'위도',longitude:'경도',categories:'음식 종류',forms:'음식 형태',hours_text:'영업시간',hours_display:'영업시간',title:'홍보 제목',content:'홍보 내용',ends_at:'종료일',active:'추천 대상',price:'가격',variable_price:'변동가격'};
-let storesLoaded=false,requestVersion=0,adminVersion=0,menuVersion=0;
+type StoreOption={id:string;name:string;address:string};
+let stores:StoreOption[]=[],storesLoaded=false,storeLoad:Promise<void>|null=null;
+let requestVersion=0,adminVersion=0,menuVersion=0;
 function priceStep(field:HTMLInputElement){field.addEventListener('input',()=>{const n=Number(field.value);field.min=Number.isInteger(n)&&n>=0?String(n%1000):'0';});}
 function option(select:HTMLSelectElement,value:string,text:string){const item=node('option',text);item.value=value;select.append(item);}
-async function loadStores(){
-  if(storesLoaded)return;
-  const {data,error}=await client().from('restaurants').select('id,name').eq('active',true).order('name').limit(10000);if(error)throw error;
-  const select=el<HTMLSelectElement>('request-target');select.replaceChildren();option(select,'','음식점을 선택하세요');
-  for(const row of data??[])option(select,row.id,row.name+' ('+row.id+')');storesLoaded=true;
+function searchText(value:string){return value.normalize('NFKC').replace(/\s+/g,'').toLowerCase();}
+function renderStores(){
+  const query=searchText(input('request-search')),select=el<HTMLSelectElement>('request-target'),previous=select.value;
+  const matching=stores.filter(row=>[row.name,row.address,row.id].some(value=>searchText(value).includes(query)));
+  select.replaceChildren();
+  option(select,'',!storesLoaded?'음식점을 불러오는 중입니다':matching.length?'음식점을 선택하세요':'검색된 음식점이 없습니다');
+  for(const row of matching)option(select,row.id,row.name+(row.address?' · '+row.address:'')+' ('+row.id+')');
+  select.value=matching.some(row=>row.id===previous)?previous:'';
+  message('request-search-status',!storesLoaded?'음식점을 불러오는 중입니다.':(query?'검색 결과 ':'전체 ')+matching.length.toLocaleString('ko-KR')+'곳');
+  if(previous!==select.value||!select.value)void loadMenus().catch(error=>message('request-status',friendly(error)));
+}
+function loadStores(){
+  if(storeLoad)return storeLoad;
+  storeLoad=(async()=>{
+    const loaded:StoreOption[]=[];
+    for(let offset=0;;offset+=500){
+      const {data,error}=await client().from('restaurants').select('id,name,address').eq('active',true).order('name').order('id').range(offset,offset+499);
+      if(error)throw error;loaded.push(...(data??[]));if((data?.length??0)<500)break;
+    }
+    stores=loaded;storesLoaded=true;renderStores();
+  })().finally(()=>{storeLoad=null;});
+  return storeLoad;
 }
 function addMenu(){
   const row=node('div','','menu-input-row portal-grid');row.innerHTML='<label>메뉴명<input class="new-menu-name" maxlength="300" required></label><label>가격 (원)<input class="new-menu-price" type="number" min="0" step="1000"></label><label>음식 형태<select class="new-menu-form"></select></label><label class="checkbox"><input class="new-menu-variable" type="checkbox">변동가격</label><button class="remove-menu secondary" type="button">이 메뉴 삭제</button>';
@@ -32,9 +51,11 @@ function changeKind(){
   el('request-menu-rows').querySelectorAll<HTMLInputElement>('input').forEach(input=>input.disabled=!registration);
   if(registration&&!el('request-menu-rows').children.length)addMenu();
   el('request-hours-row').hidden=!el<HTMLInputElement>('request-hours-enabled').checked;
+  renderStores();
 }
 async function loadMenus(){
   const mine=++menuVersion,id=input('request-target'),select=el<HTMLSelectElement>('request-menu');select.replaceChildren();option(select,'','메뉴 가격은 변경하지 않음');
+  const price=el<HTMLInputElement>('request-menu-price');price.value='';price.disabled=false;price.min='0';el<HTMLInputElement>('request-menu-variable').checked=false;
   if(!id)return;
   const {data,error}=await client().from('menus').select('id,name').eq('restaurant_id',id).eq('active',true).order('source_index');if(error)throw error;if(mine!==menuVersion)return;
   for(const menu of data??[])option(select,menu.id,menu.name);
@@ -103,6 +124,10 @@ export function initRequests(){
   priceStep(el<HTMLInputElement>('request-menu-price'));
   const categories=el<HTMLSelectElement>('request-category');for(const item of el<HTMLSelectElement>('category').options)if(item.value)option(categories,item.value,item.text);
   el('request-kind').onchange=changeKind;changeKind();
+  el('request-search').oninput=renderStores;
+  el('request-search').onkeydown=event=>{
+    if(event.key==='Enter'&&!event.isComposing&&event.keyCode!==229){event.preventDefault();renderStores();el('request-target').focus();}
+  };
   el('request-target').onchange=()=>void loadMenus().catch(error=>message('request-status',friendly(error)));
   el('request-add-menu').onclick=addMenu;
   el('request-hours-enabled').onchange=()=>{el('request-hours-row').hidden=!el<HTMLInputElement>('request-hours-enabled').checked;};

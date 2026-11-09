@@ -12,11 +12,15 @@ html=html.replace('</header>','</header><nav class="service-nav shell" aria-labe
 html=html.replace('<main>','<main id="home-view">',1)
 html=html.replace('<p id="price" class="price"></p>','<p id="price" class="price"></p><button class="save-menu secondary" type="button" hidden>메뉴 찜하기 ♡</button>')
 html=html.replace('<div id="success-toast"','<main id="service-view" class="shell content" hidden></main><div id="success-toast"',1)
-js="import {appFetch,directionsUrl} from './bridge';\n"+js
+js="import {appFetch,directionsUrl} from './bridge';\nimport {hasMapCoordinates} from './naver';\n"+js
 js=js.replace('fetch(url,','appFetch(url,').replace('__AI_TIMEOUT__','120000')
 js=js.replace("requestAnimationFrame(()=>{\n      if(display", "requestAnimationFrame(()=>{\n      if(document.getElementById('home-view').hidden)return;\n      if(display")
 js=js.replace("sdk.src='https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=__MAP_KEY__';","sdk.src='https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId='+encodeURIComponent(import.meta.env.VITE_NAVER_MAP_CLIENT_ID||'');")
-js=js.replace("node.querySelector('.map-link').href='/directions?restaurant='+encodeURIComponent(data.get('음식점아이디'));", "node.querySelector('.map-link').href=directionsUrl({name:data.get('음식점명'),latitude:data.get('위도')===''?null:Number(data.get('위도')),longitude:data.get('경도')===''?null:Number(data.get('경도'))});\nconst save=node.querySelector('.save-menu');save.hidden=!data.get('_menuId');save.dataset.menuId=data.get('_menuId');window.dispatchEvent(new Event('recommendations-rendered'));")
+js=js.replace("node.querySelector('.map-link').href='/directions?restaurant='+encodeURIComponent(data.get('음식점아이디'));", "node.querySelector('.map-link').href=directionsUrl({name:data.get('음식점명'),address:data.get('주소'),latitude:data.get('위도')===''?null:Number(data.get('위도')),longitude:data.get('경도')===''?null:Number(data.get('경도'))});\nconst save=node.querySelector('.save-menu');save.hidden=!data.get('_menuId');save.dataset.menuId=data.get('_menuId');window.dispatchEvent(new Event('recommendations-rendered'));")
+js=js.replace("Number.isFinite(lat)&&Number.isFinite(lng)&&Math.abs(lat)<=90&&Math.abs(lng)<=180", "hasMapCoordinates({name:data.get('음식점명'),latitude:lat,longitude:lng})")
+js=js.replace("const mapTimeout=setTimeout", "let mapAuthFailed=false;\nconst mapTimeout=setTimeout")
+js=js.replace("window.navermap_authFailure=()=>{", "window.navermap_authFailure=()=>{\nmapAuthFailed=true;")
+js=js.replace("clearTimeout(mapTimeout);if(mapError)return;", "clearTimeout(mapTimeout);if(mapAuthFailed)return;\nmapError=false;")
 js=js.replace("item.textContent=menu.name+' · '","item.dataset.menuId=menu.id||'';item.textContent=menu.name+' · '")
 js=js.replace("원'));return item;", "원'));if(menu.id){const save=document.createElement('button');save.type='button';save.className='save-menu secondary';save.dataset.menuId=menu.id;save.textContent='메뉴 찜하기 ♡';item.append(save);}return item;")
 js=js.replace("data.get('경도')===''?null:Number(data.get('경도'))});", "data.get('경도')===''?null:Number(data.get('경도'))});")

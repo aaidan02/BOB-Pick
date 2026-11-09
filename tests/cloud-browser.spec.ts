@@ -58,3 +58,46 @@ test('AI uses chat rather than manual filters, scrolls results and shows a three
   await page.screenshot({path:'build/cloud-app-desktop.png',fullPage:true});await page.setViewportSize({width:390,height:844});
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.screenshot({path:'build/cloud-app-mobile.png',fullPage:true});
 });
+test('request restaurant search supports name, address and IDs and clears stale menu selections',async({page})=>{
+  let submitted=0;page.on('request',r=>{if(r.url().endsWith('/rpc/submit_request'))submitted++;});
+  await login(page);await page.locator('.service-nav a[href="#requests"]').click();
+  const search=page.locator('#request-search'),target=page.locator('#request-target'),menus=page.locator('#request-menu');
+  await expect.poll(()=>target.locator('option').count()).toBeGreaterThan(500);
+  await search.fill('미 향 일 식');await expect(target.locator('option')).toHaveCount(2);
+  await expect(target.locator('option[value="15779"]')).toContainText('미향일식');
+  await target.selectOption('15779');await expect(menus.locator('option')).toContainText(['메뉴 가격은 변경하지 않음','미향정식']);
+  await expect(menus).toContainText('대구탕');
+  await menus.selectOption({label:'대구탕'});await page.locator('#request-menu-price').fill('35000');
+  await search.press('Enter');await expect(target).toBeFocused();expect(submitted).toBe(0);
+  await search.fill('태평소국밥');await expect(target).toHaveValue('');await expect(menus.locator('option')).toHaveCount(1);await expect(page.locator('#request-menu-price')).toHaveValue('');
+  await target.selectOption('16122');await expect(menus).toContainText('소국밥');
+  const records=await (await page.request.get('http://127.0.0.1:54329/rest/v1/restaurants?id=eq.15779')).json();
+  await search.fill(records[0].address);await expect(target.locator('option[value="15779"]')).toHaveCount(1);
+  await search.fill('<없는식당 / ? >');await expect(target.locator('option')).toHaveCount(1);await expect(page.locator('#request-search-status')).toHaveText('검색 결과 0곳');await expect(target).toHaveValue('');
+  await page.locator('#request-kind').selectOption('registration');await expect(search).toBeHidden();
+  await page.locator('#request-kind').selectOption('promotion');await expect(search).toBeVisible();
+  await search.fill('15779');await expect(target.locator('option')).toHaveCount(2);await target.selectOption('15779');
+  await page.locator('#request-kind').selectOption('correction');await page.locator('#request-phone').fill('042-SEARCH-TEST');
+  const pending=page.waitForRequest(r=>r.url().endsWith('/rpc/submit_request'));await page.locator('#request-submit').click();
+  expect((await pending).postDataJSON().p_restaurant_id).toBe('15779');await expect(page.locator('#request-status')).toHaveText('신청을 접수했습니다.');
+  await expect(search).toHaveValue('');await expect.poll(()=>target.locator('option').count()).toBeGreaterThan(500);await expect(menus.locator('option')).toHaveCount(1);
+  expect(submitted).toBe(1);
+  await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+  await page.screenshot({path:'build/request-search-mobile.png',fullPage:true});
+});
+test('a map script that arrives after the delay message still initializes successfully',async({page})=>{
+  await page.clock.install();
+  let release!:()=>void,requested!:()=>void;
+  const gate=new Promise<void>(resolve=>release=resolve),seen=new Promise<void>(resolve=>requested=resolve);
+  await page.unroute('https://oapi.map.naver.com/**');
+  await page.route('https://oapi.map.naver.com/**',async route=>{
+    requested();await gate;
+    await route.fulfill({contentType:'text/javascript',body:'window.naver={maps:{LatLng:class{constructor(lat,lng){}},Map:class{constructor(){window.mapCreated=true;}}}};'});
+  });
+  await page.goto('/#account',{waitUntil:'domcontentloaded'});await seen;
+  try{
+    await page.clock.runFor(13000);await expect(page.locator('#map-status')).toContainText('지연');
+    release();await expect(page.locator('#map-status')).toHaveText('음식점을 뽑으면 위치를 표시합니다.');
+    expect(await page.evaluate(()=>(window as any).mapCreated)).toBe(true);
+  }finally{release();}
+});

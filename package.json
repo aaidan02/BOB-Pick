@@ -10,7 +10,7 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "test": "node --import tsx --test tests/cloud.test.ts",
+    "test": "node --import tsx --test tests/cloud.test.ts tests/naver.test.ts",
     "test:browser": "playwright test",
     "data:export": "python3 scripts/export_cloud.py",
     "check:edge": "deno check --node-modules-dir=manual supabase/functions/ai-recommend/index.ts"

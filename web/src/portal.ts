@@ -33,7 +33,11 @@ export async function initPortal(){
     <p id="request-login">로그인하면 문의와 신청을 남길 수 있어요. <a href="#account">로그인하기</a></p>
     <form id="request-form" class="portal-form" hidden>
       <label>신청 종류<select id="request-kind"><option value="correction">정보 수정 문의</option><option value="registration">음식점 등록</option><option value="promotion">홍보 신청</option></select></label>
-      <label id="request-target-row">음식점<select id="request-target" required><option value="">음식점을 선택하세요</option></select></label>
+      <div id="request-target-row" class="restaurant-selector">
+        <label>음식점 검색<input id="request-search" type="search" maxlength="120" placeholder="음식점 이름 또는 주소로 검색" autocomplete="off" aria-controls="request-target" aria-describedby="request-search-status"></label>
+        <label>음식점 선택<select id="request-target" required><option value="">음식점을 선택하세요</option></select></label>
+        <p id="request-search-status" role="status" aria-live="polite"></p>
+      </div>
       <fieldset id="request-details"><legend>음식점 정보</legend>
         <div class="portal-grid"><label>음식점 이름<input id="request-name" maxlength="200"></label><label>주소<input id="request-address" maxlength="500"></label><label>전화번호<input id="request-phone" type="tel" maxlength="100"></label><label>위도<input id="request-latitude" type="number" step="any" min="-90" max="90"></label><label>경도<input id="request-longitude" type="number" step="any" min="-180" max="180"></label></div>
         <label id="request-category-row" hidden>음식 종류<select id="request-category"></select></label>
