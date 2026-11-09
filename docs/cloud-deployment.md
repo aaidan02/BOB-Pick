@@ -1,5 +1,7 @@
 # Supabase + Vercel 배포
 
+운영 주소는 **https://bob-pick.vercel.app**, Vercel 프로젝트는 `aaidan02/bob-pick`입니다. Supabase 초기 데이터·마이그레이션 4개·AI 함수가 적용되어 있습니다. 소스는 `feat/supabase-vercel-service` 브랜치이며 [PR #1](https://github.com/aaidan02/BOB-Pick/pull/1)에서 확인할 수 있습니다.
+
 ## 데이터 관계
 
 공통 회원키는 Supabase Auth의 `auth.users.id`(UUID)입니다. `profiles.id`, `favorites.user_id`, `posts.user_id`, `requests.user_id`, `request_reviews.reviewer_id`, `change_logs.actor_id`가 같은 회원키를 참조합니다. 활동에는 자체 ID도 있어 한 회원이 여러 건을 작성할 수 있습니다.
@@ -56,8 +58,8 @@ Production·Preview 환경에 `.env.example`의 공개 설정 3개를 등록하�
 
 서비스 URL 확정 후 Supabase **Authentication → URL Configuration**에 설정합니다.
 
-- Site URL: 실제 운영 사이트 주소
-- Redirect URLs: `https://YOUR_SITE.vercel.app/**`, 개발용 `http://localhost:5173/**`
+- Site URL: `https://bob-pick.vercel.app`
+- Redirect URLs: `https://bob-pick.vercel.app/**`, 개발용 `http://localhost:5173/**`
 
 가입 확인·재설정 메일은 계정 화면으로 돌아옵니다. PKCE를 사용하므로 요청한 브라우저에서 메일 링크를 여는 방식으로 확인합니다. 로컬 대역 테스트는 실제 메일 전달을 검증하지 않습니다.
 

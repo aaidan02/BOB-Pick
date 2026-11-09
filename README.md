@@ -2,6 +2,8 @@
 
 Vercel의 웹 화면과 Supabase의 Auth·PostgreSQL·Edge Functions로 운영하는 음식점·메뉴 추천 서비스입니다. 별도의 Java 서버는 필요하지 않습니다. 기존 Java 코드와 실행 방법은 [기존 버전 문서](docs/legacy-java.md)에 보존했습니다.
 
+운영 사이트: **https://bob-pick.vercel.app**
+
 ## 구현한 기능
 
 - 수동 추천: 기본 설정은 한 곳, 조건을 지정하면 최대 세 곳. 가게 고정과 나머지 새로고침.
