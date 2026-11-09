@@ -12,7 +12,10 @@ export function friendly(error:unknown){
   if(/rate limit|too many/i.test(text))return '요청이 많습니다. 잠시 후 다시 시도해 주세요.';
   if(/row.level|permission denied|JWT/i.test(text))return '이 작업의 권한이 없습니다. 로그인 상태를 확인해 주세요.';
   if(/violates check constraint|invalid input syntax/i.test(text))return '입력한 내용과 가격·날짜 형식을 확인해 주세요.';
-  return text;
+  if(/fetch|network|timeout|timed out|connection/i.test(text))return '연결이 원활하지 않아요. 잠시 후 다시 시도해 주세요.';
+  // Application validation messages are Korean. Keep internal JS/DB details out of the UI.
+  if(/[가-힣]/.test(text)&&!/[{}<>]|\b(?:TypeError|Error|SELECT|INSERT|constraint|Symbol)\b/i.test(text))return text;
+  return '처리하지 못했어요. 잠시 후 다시 시도해 주세요.';
 }
 export async function action(button:HTMLButtonElement,statusId:string,work:()=>Promise<void>){
   button.disabled=true;message(statusId,'처리 중입니다.');

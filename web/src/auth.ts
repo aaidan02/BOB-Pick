@@ -15,7 +15,7 @@ export async function refreshIdentity(){
   }
   if(mine!==identityVersion)return;
   user=who;admin=isAdmin;
-  el('account-link').textContent=user?'내 계정':'로그인';el('admin-link').hidden=!admin;
+  el('account-nav-label').textContent=user?'나의 밥픽':'로그인';el('admin-link').hidden=!admin;
   el('auth-box').hidden=!!user&&!recovery;el('member-box').hidden=!user;
   if(user){
     el<HTMLInputElement>('profile-nickname').value=nickname;
@@ -29,6 +29,9 @@ function setMode(next:string){
   el<HTMLInputElement>('auth-email').required=mode!=='password';el<HTMLInputElement>('auth-password').required=mode!=='reset';
   el<HTMLInputElement>('auth-nickname').required=mode==='signup';
   el('auth-submit').textContent=({login:'로그인',signup:'회원가입',reset:'재설정 메일 받기',password:'새 비밀번호 저장'} as Record<string,string>)[mode];
+  el<HTMLInputElement>('auth-password').autocomplete=mode==='login'?'current-password':'new-password';
+  document.querySelectorAll<HTMLButtonElement>('[data-auth-mode]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.authMode===mode)));
+  message('auth-hint',({login:'이메일로 로그인하고 마음에 드는 메뉴를 저장해요.',signup:'가입 후 이메일의 확인 링크를 눌러주세요.',reset:'가입한 이메일로 비밀번호 재설정 링크를 보내드려요.',password:'새로 사용할 비밀번호를 입력해 주세요.'} as Record<string,string>)[mode]);
   message('auth-status','');el('auth-box').hidden=false;
 }
 export async function initAuth(){

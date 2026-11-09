@@ -70,12 +70,17 @@ test('anonymous writes and cross-account favorites are denied by real RLS',async
   await asUser(B,'authenticated',()=>db.query('delete from favorites where user_id=$1',[A]));
   assert.equal((await asUser(A,'authenticated',()=>query('select * from favorites'))).length,1);
 });
-test('posts are publicly searchable; only the author edits and own IDs cannot be forged',async()=>{
+test('posts are publicly searchable; only authors edit, and deletion is restricted to authors or admins',async()=>{
   await asUser(A,'authenticated',()=>db.query("insert into posts(user_id,title,body) values($1,'대구탕 추천','미향일식 맛있어요')",[A]));
   const row=(await asUser(null,'anon',()=>query("select * from search_posts('대구탕')")))[0];assert.equal(row.user_id,A);
   await asUser(B,'authenticated',()=>db.query("update posts set title='다른 회원' where id=$1",[row.id]));
   assert.equal((await query('select title from posts where id=$1',[row.id]))[0].title,'대구탕 추천');
   await assert.rejects(()=>asUser(B,'authenticated',()=>db.query("insert into posts(user_id,title,body) values($1,'위조','위조')",[A])));
+  assert.deepEqual(await asUser(B,'authenticated',()=>query('delete from posts where id=$1 returning id',[row.id])),[]);
+  await assert.rejects(()=>asUser(null,'anon',()=>db.query('delete from posts where id=$1',[row.id])));
+  assert.deepEqual(await asUser(ADMIN,'authenticated',()=>query("update posts set title='관리자 수정' where id=$1 returning id",[row.id])),[]);
+  assert.deepEqual(await asUser(ADMIN,'authenticated',()=>query('delete from posts where id=$1 returning id',[row.id])),[{id:row.id}]);
+  assert.equal((await query('select * from posts where id=$1',[row.id])).length,0);
 });
 test('approval requires admin, applies catalog update and immutable review/audit once',async()=>{
   const req=(await asUser(A,'authenticated',()=>query("select submit_request('correction','16122',$1) id",[{phone:'042-TEST'}])))[0].id;

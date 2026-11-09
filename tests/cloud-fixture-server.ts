@@ -58,7 +58,7 @@ createServer(async(req,res)=>{
       if(req.method==='GET'){
         let select='t.*';
         if(name==='favorites')select=`t.*, (select to_jsonb(m)||jsonb_build_object('restaurants',(select to_jsonb(r) from restaurants r where r.id=m.restaurant_id)) from menus m where m.id=t.menu_id) menus`;
-        if(name==='requests')select=`t.*,coalesce((select jsonb_agg(v) from request_reviews v where v.request_id=t.id),'[]') request_reviews`;
+        if(name==='requests')select=`t.*,(select to_jsonb(v) from request_reviews v where v.request_id=t.id) request_reviews,(select jsonb_build_object('name',r.name) from restaurants r where r.id=t.restaurant_id) restaurants`;
         const ordering=url.searchParams.get('order')?.split('.');
         const order=ordering&&/^[a-z_]+$/.test(ordering[0])?' order by t.'+ordering[0]+(ordering[1]==='desc'?' desc':' asc'):'';
         const rows=(await tx.query<any>(`select ${select} from public.${name} t${clause}${order} limit ${Math.min(10000,Number(url.searchParams.get('limit')??1000))} offset ${Number(url.searchParams.get('offset')??0)}`,values)).rows;
@@ -71,11 +71,11 @@ createServer(async(req,res)=>{
       }
       if(req.method==='PATCH'){
         const assignments=Object.entries(body).map(([key,value])=>{if(!/^[a-z_]+$/.test(key))throw Error('Bad column');values.push(value);return key+'=$'+values.length;});
-        await tx.query(`update public.${name} t set ${assignments.join(',')}${clause}`,values);return null;
+        const changed=await tx.query(`update public.${name} t set ${assignments.join(',')}${clause} returning t.*`,values);return req.headers.prefer?.includes('return=representation')?changed.rows:null;
       }
-      if(req.method==='DELETE'){await tx.query(`delete from public.${name} t${clause}`,values);return null;}
+      if(req.method==='DELETE'){const changed=await tx.query(`delete from public.${name} t${clause} returning t.*`,values);return req.headers.prefer?.includes('return=representation')?changed.rows:null;}
       throw Error('Unknown method');
     });
-    send(req.method==='GET'||url.pathname.includes('/rpc/')?200:req.method==='POST'?201:204,result);
+    send(req.method==='GET'||url.pathname.includes('/rpc/')||result!==null?200:req.method==='POST'?201:204,result);
   }catch(error){send(400,{message:(error as Error).message,code:(error as any).code??'TEST'});}
 }).listen(54329,'127.0.0.1',()=>console.log('Test-only Supabase facade ready'));

@@ -42,6 +42,7 @@ function addMenu(){
 }
 function changeKind(){
   const kind=input('request-kind'),registration=kind==='registration',promotion=kind==='promotion';
+  message('request-details-hint',registration?'음식점 이름, 주소와 메뉴를 입력해 주세요.':'바꾸려는 정보만 입력해 주세요.');
   el('request-target-row').hidden=registration;el<HTMLSelectElement>('request-target').required=!registration;
   el('request-details').hidden=promotion;(el('request-details') as HTMLFieldSetElement).disabled=promotion;
   el('promotion-details').hidden=!promotion;(el('promotion-details') as HTMLFieldSetElement).disabled=!promotion;
@@ -65,58 +66,70 @@ function summary(payload:Record<string,any>){
   for(const [key,value] of Object.entries(payload)){
     if(key==='hours_text'&&payload.hours_display)continue;
     if(key==='menus'){
-      box.append(node('dt','메뉴'),node('dd',value.map((m:any)=>m.name+' · '+(m.variable_price?'변동가격':m.price==null?'가격 표시 없음':Number(m.price).toLocaleString('ko-KR')+'원')).join('\n')));
+      if(Array.isArray(value))box.append(node('dt','메뉴'),node('dd',value.map((m:any)=>m.name+' · '+(m.variable_price?'변동가격':m.price==null?'가격 표시 없음':Number(m.price).toLocaleString('ko-KR')+'원')).join('\n')));
     }else if(key==='menu_patch'){
       box.append(node('dt','메뉴 가격 수정'),node('dd',value.variable_price?'변동가격':Number(value.price).toLocaleString('ko-KR')+'원'));
-    }else if(fieldLabels[key])box.append(node('dt',fieldLabels[key]),node('dd',Array.isArray(value)?value.join(' · '):String(value??'')));
+    }else if(fieldLabels[key])box.append(node('dt',fieldLabels[key]),node('dd',Array.isArray(value)?value.join(' · '):typeof value==='boolean'?(value?'예':'아니요'):String(value??'')));
   }
   return box;
 }
 function requestCard(row:any){
-  const card=node('article','','list-card');card.append(node('h3',labels[row.kind]+' · '+labels[row.status]),node('small',date(row.created_at)),summary(row.payload));
+  const card=node('article','','list-card request-card'),heading=node('h3',(labels[row.kind]??'신청')+' · ');
+  const badge=node('span',labels[row.status]??'확인 중','status-badge status-'+row.status);heading.append(badge);
+  card.append(heading);
+  const name=row.restaurants?.name??row.payload?.name;if(name)card.append(node('h4',name,'request-store'));
+  card.append(node('small',date(row.created_at)),summary(row.payload??{}));
   if(row.message)card.append(node('p',row.message));
-  for(const review of row.request_reviews??[])card.append(node('p',(labels[review.decision]??review.decision)+(review.note?' · '+review.note:'')));
+  // request_id is UNIQUE: PostgREST embeds this one-to-one relation as object|null.
+  const reviews=Array.isArray(row.request_reviews)?row.request_reviews:row.request_reviews?[row.request_reviews]:[];
+  for(const review of reviews)card.append(node('p','처리 결과: '+(labels[review.decision]??'확인 완료')+(review.note?' · '+review.note:''),'review-note'));
   return card;
 }
 export async function loadRequests(){
-  const mine=++requestVersion;el('request-list').replaceChildren();if(!user)return;
+  const mine=++requestVersion;el('request-list').replaceChildren();message('request-list-status','');if(!user)return;
+  message('request-list-status','신청 내역을 불러오고 있어요.');
+  void loadStores().catch(error=>message('request-status',friendly(error)));
   try{
-    await loadStores();
-    const {data,error}=await client().from('requests').select('*,request_reviews(*)').eq('user_id',user.id).order('created_at',{ascending:false}).limit(100);if(error)throw error;if(mine!==requestVersion)return;
+    const {data,error}=await client().from('requests').select('*,request_reviews(*),restaurants(name)').eq('user_id',user.id).order('created_at',{ascending:false}).limit(100);if(error)throw error;if(mine!==requestVersion)return;
     for(const row of data??[])el('request-list').append(requestCard(row));
-    if(!data?.length)el('request-list').append(node('p','신청 내역이 없습니다.'));
-  }catch(error){if(mine===requestVersion)message('request-status',friendly(error));}
+    message('request-list-status',data?.length?'':'아직 신청 내역이 없어요.');
+  }catch(error){if(mine===requestVersion)message('request-list-status',friendly(error));}
 }
 export async function loadAdmin(){
   const mine=++adminVersion;el('admin-pending').replaceChildren();el('admin-reviews').replaceChildren();el('admin-logs').replaceChildren();
   if(!admin){el('admin-content').hidden=true;message('admin-status','관리자 권한이 필요합니다.');return;}
   el('admin-content').hidden=false;
+  message('admin-status','신청 내역을 불러오고 있어요.');
   try{
     const results=await Promise.all([
-      client().from('requests').select('*,request_reviews(*)').eq('status','pending').order('created_at').limit(100),
-      client().from('requests').select('*,request_reviews(*)').neq('status','pending').order('reviewed_at',{ascending:false}).limit(50),
+      client().from('requests').select('*,request_reviews(*),restaurants(name)').eq('status','pending').order('created_at').limit(100),
+      client().from('requests').select('*,request_reviews(*),restaurants(name)').neq('status','pending').order('reviewed_at',{ascending:false}).limit(50),
       client().from('change_logs').select('*').order('created_at',{ascending:false}).limit(100)
     ]);
     for(const result of results)if(result.error)throw result.error;if(mine!==adminVersion||!admin)return;
+    message('admin-pending-count',String(results[0].data?.length??0));
     for(const row of results[0].data??[]){
       const card=requestCard(row),note=node('textarea'),approve=node('button','승인'),reject=node('button','반려','secondary'),actions=node('div','','button-row');
-      note.maxLength=3000;note.placeholder='처리 사유';note.setAttribute('aria-label','처리 사유');
+      const noteLabel=node('label','회원에게 전달할 처리 사유');noteLabel.append(note);
+      note.maxLength=3000;note.placeholder='예: 변경할 주소를 다시 확인해 주세요';note.setAttribute('aria-label','처리 사유');
       for(const [button,decision] of [[approve,'approved'],[reject,'rejected']] as const)button.onclick=()=>void action(button,'admin-status',async()=>{
         requireUser();approve.disabled=true;reject.disabled=true;
         try{await rpc('review_request',{p_request_id:row.id,p_decision:decision,p_note:note.value.trim()});await loadAdmin();message('admin-status','처리했습니다.');}
         finally{approve.disabled=false;reject.disabled=false;}
       });
-      actions.append(approve,reject);card.append(note,actions);el('admin-pending').append(card);
+      actions.append(approve,reject);card.append(noteLabel,actions);el('admin-pending').append(card);
     }
     if(!results[0].data?.length)el('admin-pending').append(node('p','대기 중인 신청이 없습니다.'));
     for(const row of results[1].data??[])el('admin-reviews').append(requestCard(row));
+    if(!results[1].data?.length)el('admin-reviews').append(node('p','아직 처리한 신청이 없어요.','empty-state'));
     for(const row of results[2].data??[]){
-      const card=node('article','','list-card'),parts=row.action.split(':');card.append(node('h3',(labels[parts[0]]??parts[0])+' · '+(labels[parts[1]]??'')),node('small',date(row.created_at)));
+      const card=node('article','','list-card'),parts=row.action.split(':');card.append(node('h3',(labels[parts[0]]??'정보 변경')+' · '+(labels[parts[1]]??'처리 완료')),node('small',date(row.created_at)));
       const changed:Record<string,any>={};for(const [key,value] of Object.entries(row.after_data??{}))if(fieldLabels[key]&&JSON.stringify(value)!==JSON.stringify(row.before_data?.[key]))changed[key]=value;
       card.append(summary(changed));
       if(row.after_data?.menu){const before=row.before_data?.menu,after=row.after_data.menu,format=(m:any)=>m?.variable_price?'변동가격':m?.price==null?'가격 표시 없음':Number(m.price).toLocaleString('ko-KR')+'원';card.append(node('p',after.name+' · '+format(before)+' → '+format(after)));}
       el('admin-logs').append(card);
     }
+    if(!results[2].data?.length)el('admin-logs').append(node('p','아직 변경 이력이 없어요.','empty-state'));
     message('admin-status','');
   }catch(error){if(mine===adminVersion)message('admin-status',friendly(error));}
 }
@@ -133,6 +146,7 @@ export function initRequests(){
   el('request-hours-enabled').onchange=()=>{el('request-hours-row').hidden=!el<HTMLInputElement>('request-hours-enabled').checked;};
   el('request-menu-variable').onchange=()=>{el<HTMLInputElement>('request-menu-price').disabled=el<HTMLInputElement>('request-menu-variable').checked;};
   el('admin-reload').onclick=()=>void loadAdmin();
+  el('request-reload').onclick=()=>void loadRequests();
   el<HTMLFormElement>('request-form').onsubmit=event=>{
     event.preventDefault();void action(el('request-submit'),'request-status',async()=>{
       requireUser();const kind=input('request-kind'),payload:Record<string,any>={};
@@ -167,5 +181,5 @@ export function initRequests(){
       el<HTMLFormElement>('request-form').reset();el('request-menu-rows').replaceChildren();changeKind();await loadRequests();message('request-status','신청을 접수했습니다.');
     });
   };
-  window.addEventListener('identity-changed',()=>{el('request-list').replaceChildren();el('admin-pending').replaceChildren();el('admin-reviews').replaceChildren();el('admin-logs').replaceChildren();if(location.hash==='#requests')void loadRequests();});
+  window.addEventListener('identity-changed',()=>{requestVersion++;adminVersion++;message('request-list-status','');el('request-list').replaceChildren();el('admin-pending').replaceChildren();el('admin-reviews').replaceChildren();el('admin-logs').replaceChildren();if(location.hash==='#requests')void loadRequests();});
 }

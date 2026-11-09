@@ -22,11 +22,14 @@ test('manual recommendation keeps filters, three cards, locks, price labels and 
 });
 test('community create, search, edit and delete; profile ownership and logout persist',async({page})=>{
   await login(page);await page.locator('#profile-nickname').fill('밥픽 테스트 회원');await page.locator('#profile-save').click();await expect(page.locator('#member-status')).toHaveText('닉네임을 저장했습니다.');
-  await page.locator('.service-nav a[href="#community"]').click();await page.locator('#post-title').fill('둔산동 대구탕 후기');await page.locator('#post-body').fill('<img src=x onerror=alert(1)> 실제 메뉴 후기');await page.locator('#post-save').click();
+  await page.locator('.service-nav a[href="#community"]').click();await expect(page.locator('#post-editor')).toBeHidden();await page.locator('#post-compose').click();await page.locator('#post-title').fill('둔산동 대구탕 후기');await page.locator('#post-body').fill('<img src=x onerror=alert(1)> 실제 메뉴 후기');await page.locator('#post-save').click();
   await expect(page.locator('#post-status')).toHaveText('게시글을 저장했습니다.');await page.locator('#post-search').fill('대구탕');
-  const card=page.locator('#post-list .list-card');await expect(card).toHaveCount(1);await card.locator('.post-title').click();await expect(card.locator('img')).toHaveCount(0);
+  const card=page.locator('#post-list .list-card');await expect(card).toHaveCount(1);
+  const bar=card.locator('summary'),box=(await bar.boundingBox())!;await bar.click({position:{x:box.width-35,y:box.height/2}});
+  await expect(card.locator('.post-body')).toBeVisible();await expect(card.locator('img')).toHaveCount(0);
+  await bar.focus();await page.keyboard.press('Space');await expect(card.locator('.post-body')).toBeHidden();await page.keyboard.press('Enter');await expect(card.locator('.post-body')).toBeVisible();
   await card.getByRole('button',{name:'수정',exact:true}).click();await page.locator('#post-title').fill('수정된 대구탕 후기');await page.locator('#post-save').click();await expect(card.locator('.post-title')).toHaveText('수정된 대구탕 후기');
-  await card.locator('.post-title').click();page.once('dialog',dialog=>dialog.accept());await card.getByRole('button',{name:'삭제',exact:true}).click();await expect(page.locator('#post-list .list-card')).toHaveCount(0);
+  await expect(card.locator('.post-body')).toBeVisible();page.once('dialog',dialog=>dialog.accept());await card.getByRole('button',{name:'삭제',exact:true}).click();await expect(page.locator('#post-list .list-card')).toHaveCount(0);
   await page.locator('.service-nav a[href="#account"]').click();await page.locator('#logout').click();await expect(page.locator('#auth-box')).toBeVisible();await page.reload();await expect(page.locator('#member-box')).toBeHidden();
 });
 test('member submits registration; admin approves; member sees immutable result and new catalog',async({page,browser})=>{
@@ -53,6 +56,7 @@ test('AI uses chat rather than manual filters, scrolls results and shows a three
   await page.locator('.service-nav a[href="#filters"]').click();await page.locator('#max').fill('1');await expect(page.locator('#pick')).toBeDisabled();
   await page.locator('#chat-input').fill('미향일식 대구탕 추천해줘');await page.locator('#chat-send').click();
   await expect(page.locator('#menu')).toHaveText('대구탕');await expect(page.locator('#price')).toHaveText('30,000원');await expect(page.locator('#success-toast')).toBeVisible();
+  await expect(page.locator('#results-grid')).not.toHaveClass(/multiple/);
   await expect.poll(async()=>(await page.locator('#results-grid').boundingBox())?.y??999).toBeLessThan(100);
   await expect(page.locator('#success-toast')).toBeHidden({timeout:4500});expect(calls).toBe(1);
   await page.screenshot({path:'build/cloud-app-desktop.png',fullPage:true});await page.setViewportSize({width:390,height:844});
@@ -100,4 +104,58 @@ test('a map script that arrives after the delay message still initializes succes
     release();await expect(page.locator('#map-status')).toHaveText('음식점을 뽑으면 위치를 표시합니다.');
     expect(await page.evaluate(()=>(window as any).mapCreated)).toBe(true);
   }finally{release();}
+});
+test('admins can delete another member post while other members cannot edit or delete it',async({page,browser})=>{
+  await login(page);await page.locator('.service-nav a[href="#community"]').click();await page.locator('#post-compose').click();
+  await page.locator('#post-title').fill('관리자 삭제 권한 확인');await page.locator('#post-body').fill('회원이 쓴 게시글입니다.');await page.locator('#post-save').click();
+  await expect(page.locator('#post-status')).toHaveText('게시글을 저장했습니다.');
+  const otherContext=await browser.newContext(),other=await otherContext.newPage();await other.route('https://oapi.map.naver.com/**',r=>r.abort());await login(other,'b@example.test');
+  await other.locator('.service-nav a[href="#community"]').click();await other.locator('#post-search').fill('관리자 삭제 권한 확인');
+  const otherCard=other.locator('#post-list .post-card');await expect(otherCard).toHaveCount(1);await otherCard.locator('summary').click();
+  await expect(otherCard.getByRole('button',{name:/수정|삭제/})).toHaveCount(0);await expect(other.locator('#admin-link')).toBeHidden();
+  const staffContext=await browser.newContext(),staff=await staffContext.newPage();await staff.route('https://oapi.map.naver.com/**',r=>r.abort());await login(staff,'admin@example.test');
+  await staff.locator('.service-nav a[href="#community"]').click();await staff.locator('#post-search').fill('관리자 삭제 권한 확인');
+  const card=staff.locator('#post-list .post-card');await expect(card).toHaveCount(1);await card.locator('summary').click();
+  await expect(card.getByRole('button',{name:'수정',exact:true})).toHaveCount(0);
+  await staff.setViewportSize({width:390,height:844});await staff.screenshot({path:'build/community-admin-mobile.png'});
+  staff.once('dialog',dialog=>dialog.accept());await card.getByRole('button',{name:'관리자 삭제',exact:true}).click();
+  await expect(staff.locator('#post-status')).toHaveText('게시글을 삭제했습니다.');await expect(card).toHaveCount(0);
+  await page.reload();await page.locator('#post-search').fill('관리자 삭제 권한 확인');await expect(page.locator('#post-list .post-card')).toHaveCount(0);
+  await otherContext.close();await staffContext.close();
+});
+test('rejected inquiry renders an object review and restaurant name for admin and owner',async({page,browser})=>{
+  await login(page);await page.locator('.service-nav a[href="#requests"]').click();await page.locator('#request-search').fill('15779');await expect(page.locator('#request-target option')).toHaveCount(2);
+  await page.locator('#request-target').selectOption('15779');await page.locator('#request-phone').fill('042-REVIEW-TEST');await page.locator('#request-message').fill('반려 내역 표시 확인');await page.locator('#request-submit').click();
+  await expect(page.locator('#request-status')).toHaveText('신청을 접수했습니다.');
+  const pending=page.locator('#request-list .list-card').filter({hasText:'반려 내역 표시 확인'});await expect(pending).toContainText('미향일식');await expect(pending).toContainText('대기');
+  const context=await browser.newContext(),staff=await context.newPage();await staff.route('https://oapi.map.naver.com/**',r=>r.abort());await login(staff,'admin@example.test');await staff.locator('#admin-link').click();
+  const card=staff.locator('#admin-pending .list-card').filter({hasText:'반려 내역 표시 확인'});await card.locator('textarea').fill('정확한 전화번호를 다시 알려주세요.');await card.getByRole('button',{name:'반려',exact:true}).click();
+  await expect(staff.locator('#admin-status')).toHaveText('처리했습니다.');await expect(staff.locator('#admin-reviews')).toContainText('정확한 전화번호를 다시 알려주세요.');
+  const response=page.waitForResponse(r=>r.request().method()==='GET'&&r.url().includes('/rest/v1/requests?'));await page.reload();
+  const data=await (await response).json(),reviewed=data.find((r:any)=>r.message==='반려 내역 표시 확인');expect(reviewed.request_reviews.decision).toBe('rejected');expect(Array.isArray(reviewed.request_reviews)).toBe(false);
+  await expect(page.locator('#request-list')).toContainText('정확한 전화번호를 다시 알려주세요.');await expect(page.locator('#request-list')).toContainText('정보 수정 · 반려');
+  await expect(page.locator('body')).not.toContainText('object is not iterable');await expect(staff.locator('body')).not.toContainText('object is not iterable');await context.close();
+});
+test('internal errors use Korean guidance and lists recover after retry',async({page})=>{
+  await login(page,'admin@example.test');
+  const broken='object is not iterable (cannot read property Symbol(Symbol.iterator))';
+  await page.route('**/rest/v1/requests?**',r=>r.fulfill({status:500,contentType:'application/json',body:JSON.stringify({message:broken})}));
+  await page.locator('#admin-link').click();await expect(page.locator('#admin-status')).toHaveText('처리하지 못했어요. 잠시 후 다시 시도해 주세요.');await expect(page.locator('body')).not.toContainText(broken);
+  await page.locator('.service-nav a[href="#requests"]').click();await expect(page.locator('#request-list-status')).toHaveText('처리하지 못했어요. 잠시 후 다시 시도해 주세요.');await expect(page.locator('body')).not.toContainText(broken);
+  await page.unroute('**/rest/v1/requests?**');await page.locator('#request-reload').click();await expect(page.locator('#request-list-status')).toHaveText('아직 신청 내역이 없어요.');
+  await page.route('**/rest/v1/rpc/search_posts',r=>r.fulfill({status:500,contentType:'application/json',body:JSON.stringify({message:broken})}));
+  await page.locator('.service-nav a[href="#community"]').click();await expect(page.locator('#post-list-status')).toHaveText('처리하지 못했어요. 잠시 후 다시 시도해 주세요.');
+  await page.unroute('**/rest/v1/rpc/search_posts');await page.locator('#post-reload').click();await expect(page.locator('#post-list-status')).not.toContainText('처리하지 못했어요');
+  await page.locator('#admin-link').click();await expect(page.locator('#admin-status')).toHaveText('');await expect(page.locator('#admin-reviews .list-card')).not.toHaveCount(0);
+});
+test('mobile navigation and main pages remain usable without horizontal scrolling',async({page})=>{
+  await page.setViewportSize({width:390,height:844});await login(page,'admin@example.test');
+  for(const hash of ['#filters','#community','#favorites','#requests','#admin','#account']){
+    const link=page.locator('.service-nav a[href="'+hash+'"]');await link.click();await expect(link).toHaveAttribute('aria-current','page');
+    const box=(await link.boundingBox())!;expect(box.y).toBeGreaterThan(700);expect(box.y+box.height).toBeLessThanOrEqual(844);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    if(hash==='#community')await page.screenshot({path:'build/community-mobile.png',fullPage:true});
+    if(hash==='#admin')await page.screenshot({path:'build/admin-mobile.png',fullPage:true});
+  }
+  await page.setViewportSize({width:320,height:700});await page.locator('.service-nav a[href="#requests"]').click();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });

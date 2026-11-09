@@ -1,4 +1,5 @@
 import {client,rpc} from './supabase';
+import {friendly} from './ui';
 import {legacyRecommendation,type Candidate} from '../../supabase/functions/_shared/recommendation';
 export {directionsUrl} from './naver';
 
@@ -27,7 +28,7 @@ export async function appFetch(url:string,options:RequestInit={}):Promise<Respon
       const q=new URLSearchParams(String(options.body??'')),{locked,prior}=batchState(q);
       const {data:{session}}=await client().auth.getSession();if(!session)return new Response('AI 추천은 로그인 후 사용할 수 있습니다.',{status:401});
       const response=await fetch(import.meta.env.VITE_SUPABASE_URL+'/functions/v1/ai-recommend',{method:'POST',headers:{'Content-Type':'application/json',apikey:import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,Authorization:'Bearer '+session.access_token},body:JSON.stringify({history:JSON.parse(q.get('history')??'[]'),size:Number(q.get('size')??3),locked,prior}),signal});
-      const data=await response.json();return new Response(response.ok?JSON.stringify(data):data.error??'AI 추천에 실패했습니다.',{status:response.status,headers:{'Content-Type':response.ok?'application/json':'text/plain'}});
+      const data=await response.json();return new Response(response.ok?JSON.stringify(data):friendly(data.error??'AI 추천에 실패했습니다.'),{status:response.status,headers:{'Content-Type':response.ok?'application/json':'text/plain'}});
     }
     const filter=manualFilter(q);
     if(parsed.pathname==='/api/count')return new Response(String(await rpc('recommend_count',{p_filter:filter},signal)));
@@ -42,6 +43,6 @@ export async function appFetch(url:string,options:RequestInit={}):Promise<Respon
     return fetch(url,options);
   }catch(error){
     if(options.signal?.aborted)throw error;
-    return new Response(error instanceof Error?error.message:'요청을 처리하지 못했습니다.',{status:400});
+    return new Response(friendly(error),{status:400});
   }
 }

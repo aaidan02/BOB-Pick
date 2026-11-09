@@ -1,5 +1,6 @@
 import {appFetch,directionsUrl} from './bridge';
 import {hasMapCoordinates} from './naver';
+import {friendly} from './ui';
 
   const el=id=>document.getElementById(id);
   function showDetail(node,value){
@@ -92,6 +93,7 @@ const save=node.querySelector('.save-menu');save.hidden=!data.get('_menuId');sav
   }
   function showPickStatus(){
     const shown=slots.filter(slot=>slot.data);
+    el('results-grid').classList.toggle('multiple',shown.length>1);
     if(resultSource==='chat'){
       el('chat-status').textContent=shown.length&&shown.every(slot=>slot.locked)?'고정을 해제하면 다시 추천받을 수 있어요.':'';return;
     }
@@ -225,7 +227,7 @@ const save=node.querySelector('.save-menu');save.hidden=!data.get('_menuId');sav
     }catch(error){
       if(mine!==version||countController!==controller||controller.signal.aborted||picking)return;
       el('pick').disabled=true;el('count').textContent='조건을 확인해 주세요.';
-      el('status').textContent=error.message||'서버 연결에 실패했습니다.';
+      el('status').textContent=friendly(error);
     }finally{
       if(countController===controller)countController=null;
     }
@@ -294,7 +296,7 @@ const save=node.querySelector('.save-menu');save.hidden=!data.get('_menuId');sav
       showPickStatus();
       if(matched>0)revealResults(display);
       if(matched===0)el('status').textContent='새로 추천할 음식점이 없습니다.';
-    }catch(error){if(mine===version)el('status').textContent=error.message||'추천에 실패했습니다.';}
+    }catch(error){if(mine===version)el('status').textContent=friendly(error);}
     finally{
       if(mine===version){
         picking=false;pickController=null;updatePickButton();
@@ -335,7 +337,7 @@ const save=node.querySelector('.save-menu');save.hidden=!data.get('_menuId');sav
       el('empty-pick').hidden=slots.some(slot=>slot.data);showPosition();showPickStatus();
       if(batch.restaurants.length>0)revealResults(display);
     }catch(error){
-      if(mine===chatVersion&&!controller.signal.aborted)el('chat-status').textContent=error.message||'AI 추천을 받지 못했습니다. 다시 시도해 주세요.';
+      if(mine===chatVersion&&!controller.signal.aborted)el('chat-status').textContent=friendly(error);
     }finally{
       if(mine===chatVersion){chatPicking=false;chatController=null;updatePickButton();}
     }
@@ -361,4 +363,4 @@ const save=node.querySelector('.save-menu');save.hidden=!data.get('_menuId');sav
     if(!Number.isInteger(total)||total<1)throw new Error('추첨할 음식점이 없습니다.');
     if(version===0){setNow();changed();}
     else if(countReady)showCount(matched);
-  }).catch(error=>{el('count').textContent='서버 연결을 확인해 주세요.';el('status').textContent=error.message;});
+  }).catch(error=>{el('count').textContent='서버 연결을 확인해 주세요.';el('status').textContent=friendly(error);});
