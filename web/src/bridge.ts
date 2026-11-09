@@ -1,0 +1,51 @@
+import {client,rpc} from './supabase';
+import {legacyRecommendation,type Candidate} from '../../supabase/functions/_shared/recommendation';
+
+export function manualFilter(q:URLSearchParams){
+  const filter:Record<string,unknown>={checkHours:q.get('time')!=='all',categories:q.get('category')?[q.get('category')]:[],forms:q.get('form')?[q.get('form')]:[]};
+  for(const key of ['min','max'])if(q.has(key)&&q.get(key)!==''){
+    const value=Number(q.get(key));if(!Number.isInteger(value)||value<0||value>2147483647)throw Error('최소·최대 가격을 확인해 주세요.');filter[key]=value;
+  }
+  if(filter.min!=null&&filter.max!=null&&Number(filter.min)>Number(filter.max))throw Error('최소·최대 가격을 확인해 주세요.');
+  if(q.get('date'))filter.date=q.get('date');if(q.get('time')&&q.get('time')!=='all')filter.time=q.get('time');
+  return filter;
+}
+export function batchState(q:URLSearchParams){
+  const locked:string[]=[],prior:Record<string,string>={};
+  for(let i=0;i<3;i++){
+    if(q.get('exclude'+i))locked.push(q.get('exclude'+i)!);
+    if(q.get('prior'+i))prior[q.get('prior'+i)!]=q.get('menu'+i)??'';
+  }
+  return {locked,prior};
+}
+export async function appFetch(url:string,options:RequestInit={}):Promise<Response>{
+  try{
+    const parsed=new URL(url,location.origin),q=parsed.searchParams,signal=options.signal??undefined;
+    if(signal?.aborted)throw new DOMException('Aborted','AbortError');
+    if(parsed.pathname==='/api/chat'){
+      const q=new URLSearchParams(String(options.body??'')),{locked,prior}=batchState(q);
+      const {data:{session}}=await client().auth.getSession();if(!session)return new Response('AI 추천은 로그인 후 사용할 수 있습니다.',{status:401});
+      const response=await fetch(import.meta.env.VITE_SUPABASE_URL+'/functions/v1/ai-recommend',{method:'POST',headers:{'Content-Type':'application/json',apikey:import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,Authorization:'Bearer '+session.access_token},body:JSON.stringify({history:JSON.parse(q.get('history')??'[]'),size:Number(q.get('size')??3),locked,prior}),signal});
+      const data=await response.json();return new Response(response.ok?JSON.stringify(data):data.error??'AI 추천에 실패했습니다.',{status:response.status,headers:{'Content-Type':response.ok?'application/json':'text/plain'}});
+    }
+    const filter=manualFilter(q);
+    if(parsed.pathname==='/api/count')return new Response(String(await rpc('recommend_count',{p_filter:filter},signal)));
+    if(['/api/pick','/api/picks'].includes(parsed.pathname)){
+      const {locked,prior}=batchState(q),single=parsed.pathname==='/api/pick';
+      if(single&&q.get('previous'))prior[q.get('previous')!]=q.get('previousMenu')??'';
+      const batch=await rpc<{count:number;restaurants:Candidate[]}>('pick_restaurants',{p_filter:filter,p_size:single?1:Number(q.get('size')??3),p_locked:locked,p_prior:prior},signal);
+      const restaurants=batch.restaurants.map(item=>legacyRecommendation(item,batch.count,filter));
+      if(single){if(!restaurants.length)return new Response('조건에 맞는 음식점이 없습니다.',{status:404});return new Response(new URLSearchParams(restaurants[0]).toString());}
+      return Response.json({...batch,restaurants});
+    }
+    return fetch(url,options);
+  }catch(error){
+    if(options.signal?.aborted)throw error;
+    return new Response(error instanceof Error?error.message:'요청을 처리하지 못했습니다.',{status:400});
+  }
+}
+export function directionsUrl(r:{name:string;latitude:number|null;longitude:number|null}){
+  if(r.latitude==null||r.longitude==null)return 'https://map.naver.com/p/search/'+encodeURIComponent(r.name);
+  const x=r.longitude*20037508.34/180,y=Math.log(Math.tan((90+r.latitude)*Math.PI/360))/(Math.PI/180)*20037508.34/180;
+  return `https://map.naver.com/p/directions/-/${x.toFixed(6)},${y.toFixed(6)},${encodeURIComponent(r.name)},,PLACE_POI/-/transit?c=15.00,0,0,0,dh`;
+}

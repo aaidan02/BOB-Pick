@@ -1,0 +1,76 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#c64706">
+<title>밥픽 · 오늘은 뭘 먹을까요?</title>
+</head><body>
+<header class="site-header"><div class="shell header-inner">
+  <a class="brand" href="#" aria-label="밥픽 처음으로"><span class="brand-icon" aria-hidden="true">밥</span><span>밥픽<span class="brand-dot">.</span></span></a>
+  <nav class="nav" aria-label="페이지 탐색"><a href="#filters">메뉴 찾기</a><a href="#restaurant-map">음식점 지도</a></nav>
+  <span class="location"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="6"/><path d="M12 2v5m0 10v5M2 12h5m10 0h5"/></svg>대전 둔산동</span>
+</div></header><nav class="service-nav shell" aria-label="서비스 메뉴"><a href="#filters">메뉴 찾기</a><a href="#community">커뮤니티</a><a href="#favorites">내 찜</a><a href="#requests">문의·신청</a><a href="#account" id="account-link">로그인</a><a href="#admin" id="admin-link" hidden>관리자</a></nav>
+<main id="home-view">
+  <section class="hero"><div class="shell hero-inner">
+    <div><p class="eyebrow">우리 동네 한 끼 탐색</p><h1>오늘은 뭘 먹을까요<span>?</span></h1><p class="hero-copy">예산과 취향에 맞는 한 끼를 찾아요.</p></div>
+    <svg class="hero-art" viewBox="0 0 320 270" fill="none" aria-hidden="true">
+      <ellipse cx="170" cy="244" rx="116" ry="12" fill="#f5e9c0"/>
+      <path d="m234 107 38-63" stroke="#a76642" stroke-width="11" stroke-linecap="round"/><path d="m249 111 47-58" stroke="#c88a52" stroke-width="11" stroke-linecap="round"/>
+      <path d="M66 145c-15-38 4-66 35-69 14-45 54-58 82-33 40-15 76 9 74 44 36 8 53 32 40 63Z" fill="#fffef9" stroke="#e6d8b1" stroke-width="4"/>
+      <path d="M102 106c9-10 19-12 29-6m38-27c8-5 15-5 22 0m38 38c8-5 15-5 22 0m-98 10 13-3" stroke="#e9ddbd" stroke-width="5" stroke-linecap="round"/>
+      <path d="M61 151h240c-9 58-45 88-120 90-73-1-109-29-120-90Z" fill="#ff9c64"/><path d="M60 148h241" stroke="#ffba90" stroke-width="14" stroke-linecap="round"/>
+      <path d="M159 238h44v13h-44Z" fill="#e6783c"/>
+      <ellipse cx="144" cy="193" rx="5.5" ry="8" fill="#674332"/><ellipse cx="212" cy="193" rx="5.5" ry="8" fill="#674332"/>
+      <path d="M166 205q13 16 26-1" stroke="#674332" stroke-width="4.5" stroke-linecap="round"/>
+      <ellipse cx="124" cy="207" rx="14" ry="6" fill="#f97b51"/><ellipse cx="233" cy="207" rx="14" ry="6" fill="#f97b51"/>
+      <path d="m35 112 5 14 14 5-14 5-5 14-5-14-14-5 14-5Z" fill="#ffc550"/><circle cx="306" cy="196" r="9" fill="#f7ca67"/>
+      <path d="m57 72-12-7m31-6 3-15" stroke="#9db78e" stroke-width="5" stroke-linecap="round"/>
+    </svg>
+  </div></section>
+  <div class="shell content">
+    <section id="ai-chat" class="filters" aria-label="AI 채팅 추천">
+      <div class="section-head"><div><p class="section-eyebrow">AI 채팅</p><h2>밥픽에게 물어보세요</h2></div><button id="chat-reset" type="button">대화 초기화</button></div>
+      <div id="chat-log" role="log" aria-label="밥픽과의 대화" aria-live="polite" hidden></div>
+      <form id="chat-form" class="chat-form">
+        <label for="chat-input">먹고 싶은 음식을 말해보세요</label>
+        <div class="chat-compose"><textarea id="chat-input" rows="2" maxlength="1000" placeholder="예: 만 원 이하로 따뜻한 국물 요리 먹고 싶어"></textarea><button id="chat-send" type="submit" disabled>AI로 추천받기</button></div>
+      </form>
+      <div class="chat-actions"><p id="chat-count"></p><button id="chat-refresh" type="button" hidden>다시 추천받기</button></div>
+      <p id="chat-status" role="status" aria-live="polite"></p>
+    </section>
+    <section id="filters" class="filters" aria-label="수동 조건 검색">
+      <div class="section-head"><div><p class="section-eyebrow">수동 검색</p><h2>조건으로 직접 찾아보세요</h2></div><button id="reset" type="button">조건 초기화</button></div>
+      <div class="filter-grid">
+        <label>최소 가격 (원)<input id="min" type="number" min="0" step="1000" placeholder="제한 없음"></label>
+        <label>최대 가격 (원)<input id="max" type="number" min="0" step="1000" placeholder="제한 없음"></label>
+        <label>음식 종류<select id="category"><option value="">랜덤 (전체)</option></select></label>
+        <label>음식 형태<select id="form"><option value="">랜덤 (전체)</option></select></label>
+        <label>방문 날짜<input id="date" type="date" value=""></label>
+        <label>방문 시각<input id="time" type="time" value=""></label>
+        <div class="time-controls"><label class="checkbox"><input id="time-enabled" type="checkbox" checked>영업시간 적용</label><button id="now" type="button">현재시각</button></div>
+      </div>
+      <div class="filter-bottom"><p id="count" role="status">음식점 데이터를 불러오는 중입니다.</p><div class="actions"><button id="pick" disabled>오늘의 메뉴 뽑기</button></div></div>
+      <p id="status" role="status" aria-live="polite"></p>
+    </section>
+    <div id="results-grid" class="results-grid">
+      <section class="pick-panel" aria-label="추천 메뉴">
+        <div class="section-head"><div><p class="section-eyebrow">오늘의 한 끼</p><h2>오늘의 추천 메뉴</h2></div></div>
+        <div id="empty-pick" class="empty-pick"><span class="empty-symbol" aria-hidden="true">✦</span><p>오늘의 메뉴를 골라보세요.</p></div>
+        <div id="restaurant-cards" class="restaurant-cards">
+        <article id="result" class="restaurant-card" hidden>
+          <div class="card-head" hidden><label class="checkbox"><input class="like" type="checkbox">마음에 들어요</label><span class="lock-state" hidden>고정됨</span></div>
+          <h2 id="menu" class="menu"></h2><p id="name" class="name"></p><p id="price" class="price"></p><button class="save-menu secondary" type="button" hidden>메뉴 찜하기 ♡</button>
+          <p id="matching-title" class="matching-title"></p><ul id="matching-menus" class="matching-menus"></ul>
+          <dl class="restaurant-info"><div><dt>종류 · 형태</dt><dd id="tags" class="tags"></dd></div><div><dt>주소</dt><dd id="address" class="address"></dd></div>
+            <div><dt>전화번호</dt><dd id="phone" class="phone"></dd></div><div><dt>운영시간</dt><dd id="hours" class="hours"></dd></div></dl>
+          <a id="link" class="map-link" target="_blank" rel="noopener noreferrer">네이버 길찾기 <span aria-hidden="true">↗</span></a>
+        </article>
+        </div>
+      </section>
+      <section id="restaurant-map" class="map-panel" aria-label="음식점 위치">
+        <div class="section-head"><div><p class="section-eyebrow">가게 위치</p><h2>여기서 만나요</h2></div><span class="map-dot" aria-hidden="true"></span></div>
+        <div id="map" aria-label="추천 음식점의 위치"></div><p id="map-status" role="status">지도를 불러오는 중입니다.</p>
+      </section>
+    </div>
+  </div>
+</main>
+<main id="service-view" class="shell content" hidden></main><div id="success-toast" class="success-toast" role="status" aria-live="polite" aria-atomic="true" hidden><span class="check" aria-hidden="true">✓</span><p><strong>성공!</strong><br>AI 추천이 완료됐어요.</p></div>
+<script type="module" src="/src/main.ts"></script></body></html>

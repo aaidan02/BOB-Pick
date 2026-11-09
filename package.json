@@ -1,0 +1,30 @@
+{
+  "name": "bob-pick",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "node --import tsx --test tests/cloud.test.ts",
+    "test:browser": "playwright test",
+    "data:export": "python3 scripts/export_cloud.py",
+    "check:edge": "deno check --node-modules-dir=manual supabase/functions/ai-recommend/index.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.119.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.15",
+    "@playwright/test": "^1.65.0",
+    "@types/node": "^26.6.6",
+    "deno": "^2.9.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.6"
+  }
+}
