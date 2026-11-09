@@ -4,6 +4,8 @@ Vercel의 웹 화면과 Supabase의 Auth·PostgreSQL·Edge Functions로 운영�
 
 운영 사이트: **https://bob-pick.vercel.app**
 
+지금까지의 작업은 [프로젝트 정리](docs/project-summary-2026-11-09.md), [개발 과정 메모장](docs/development-history-2026-11-09.txt), [Windows 실행 방법](docs/windows-quick-start.txt)에 정리했습니다.
+
 ## 구현한 기능
 
 - 수동 추천: 기본 설정은 한 곳, 조건을 지정하면 최대 세 곳. 가게 고정과 나머지 새로고침.
