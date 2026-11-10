@@ -4,6 +4,7 @@ import {initFavorites,loadFavorites} from './favorites';
 import {initRequests,loadRequests,loadAdmin} from './requests';
 import {el} from './ui';
 import {isLegalPage,showLegalPage} from './legal';
+import {initAdminAccounts} from './admin-accounts';
 
 export async function initPortal(){
   el('service-view').innerHTML=`
@@ -69,14 +70,22 @@ export async function initPortal(){
     </div>
   </section>
   <section id="admin-panel" class="service-panel" hidden aria-labelledby="admin-heading">
-    <div class="page-heading heading-actions"><div><p class="section-eyebrow">밥픽 운영</p><h1 id="admin-heading">관리자</h1><p>신청을 검토하고 처리 결과를 회원에게 알려주세요.</p></div><button id="admin-reload" type="button" class="secondary">새로고침</button></div>
+    <div class="page-heading heading-actions"><div><p class="section-eyebrow">밥픽 운영</p><h1 id="admin-heading">관리자</h1><p>신청을 검토하고 관리자 권한을 관리해요.</p></div><button id="admin-reload" type="button" class="secondary">새로고침</button></div>
     <p id="admin-status" class="form-status" role="status"></p><div id="admin-content" hidden>
+      <section class="surface" aria-labelledby="admin-accounts-heading">
+        <div class="section-head"><h2 id="admin-accounts-heading">관리자 계정 관리 <span id="admin-account-count" class="status-badge">0</span></h2></div>
+        <h3>현재 관리자</h3><p id="admin-account-list-status" class="helper" role="status"></p><div id="admin-account-list"></div>
+        <div class="admin-account-search-section"><h3>관리자 추가</h3><p class="helper">회원가입과 이메일 확인을 마친 계정에 관리자 권한을 추가할 수 있어요.</p>
+          <form id="admin-account-search-form" class="admin-account-search-form"><label class="grow">회원 이메일 또는 닉네임<input id="admin-account-search" type="search" minlength="2" maxlength="254" required autocomplete="off" placeholder="이메일이나 닉네임으로 검색" aria-describedby="admin-account-search-status"></label><button id="admin-account-search-submit" type="submit">회원 검색</button></form>
+          <p id="admin-account-search-status" class="helper" role="status"></p><div id="admin-account-results"></div>
+        </div><p id="admin-account-status" class="form-status" role="status"></p>
+      </section>
       <section class="surface"><div class="section-head"><h2>승인 대기 <span id="admin-pending-count" class="status-badge">0</span></h2></div><div id="admin-pending"></div></section>
       <section class="surface"><h2>처리 내역</h2><div id="admin-reviews"></div></section>
       <details class="surface audit-section"><summary>변경 이력 보기</summary><div id="admin-logs"></div></details>
     </div>
   </section>`;
-  initCommunity();initFavorites();initRequests();
+  initCommunity();initFavorites();initRequests();initAdminAccounts();
   function route(){
     const page=location.hash.slice(1);
     if(isLegalPage(page)){showLegalPage(page);return;}

@@ -10,12 +10,12 @@ const A='00000000-0000-4000-8000-000000000001',B='00000000-0000-4000-8000-000000
 before(async()=>{
   db=new PGlite();
   await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;
-    create table auth.users(id uuid primary key,email text,raw_user_meta_data jsonb default '{}');
+    create table auth.users(id uuid primary key,email varchar(255),raw_user_meta_data jsonb default '{}',email_confirmed_at timestamptz,deleted_at timestamptz,banned_until timestamptz,is_anonymous boolean default false);
     create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
     grant usage on schema public,auth to anon,authenticated;grant execute on function auth.uid() to anon,authenticated;`);
   for(const file of readdirSync('supabase/migrations').sort())await db.exec(readFileSync('supabase/migrations/'+file,'utf8'));
   try{await db.exec(readFileSync('supabase/seed.sql','utf8'));}catch(error){throw Error('Catalog import failed: '+(error as Error).message);}
-  await db.exec(`insert into auth.users(id,email) values('${A}','a@example.test'),('${B}','b@example.test'),('${ADMIN}','admin@example.test');insert into private.admin_members values('${ADMIN}');`);
+  await db.exec(`insert into auth.users(id,email,email_confirmed_at) values('${A}','a@example.test',now()),('${B}','b@example.test',now()),('${ADMIN}','admin@example.test',now());insert into private.admin_members values('${ADMIN}');`);
 });
 after(async()=>{await db?.close();});
 async function asUser<T>(id:string|null,role:string,work:()=>Promise<T>):Promise<T>{
@@ -24,6 +24,8 @@ async function asUser<T>(id:string|null,role:string,work:()=>Promise<T>):Promise
 }
 async function query(sql:string,args:any[]=[]){return (await db.query<any>(sql,args)).rows;}
 const noHours={checkHours:false};
+const setAdmin=(actor:string,target:string,enabled:boolean)=>asUser(actor,'authenticated',async()=>
+  (await query('select admin_set_membership($1,$2) value',[target,enabled]))[0].value);
 test('original catalog imports all 808 restaurants, 5086 menu IDs; seed is idempotent',async()=>{
   assert.equal((await query('select count(*) n from restaurants'))[0].n,808);
   assert.equal((await query('select count(*) n from menus'))[0].n,5086);
@@ -81,6 +83,67 @@ test('posts are publicly searchable; only authors edit, and deletion is restrict
   assert.deepEqual(await asUser(ADMIN,'authenticated',()=>query("update posts set title='관리자 수정' where id=$1 returning id",[row.id])),[]);
   assert.deepEqual(await asUser(ADMIN,'authenticated',()=>query('delete from posts where id=$1 returning id',[row.id])),[{id:row.id}]);
   assert.equal((await query('select * from posts where id=$1',[row.id])).length,0);
+});
+test('admin account data and mutations reject anonymous users, members and forged metadata',async()=>{
+  for(const [sql,args] of [['select * from admin_list_accounts()',[]],['select * from admin_search_accounts($1)',['example']],['select admin_set_membership($1,true)',[A]]] as const){
+    await assert.rejects(()=>asUser(null,'anon',()=>query(sql,[...args])));
+    await assert.rejects(()=>asUser(A,'authenticated',()=>query(sql,[...args])));
+  }
+  await db.query(`update auth.users set raw_user_meta_data='{"role":"admin","is_admin":true}' where id=$1`,[A]);
+  assert.equal((await asUser(A,'authenticated',()=>query('select is_admin() value')))[0].value,false);
+  await assert.rejects(()=>setAdmin(A,A,true));
+  await assert.rejects(()=>asUser(A,'authenticated',()=>db.query('delete from private.admin_members where user_id=$1',[ADMIN])));
+  const members=await asUser(ADMIN,'authenticated',()=>query('select * from admin_list_accounts()'));
+  assert.equal(members.length,1);assert.equal(members[0].user_id,ADMIN);assert.equal(members[0].can_remove,false);
+  const grants=await query(`select has_function_privilege('anon','public.admin_set_membership(uuid,boolean)','EXECUTE') allowed`);assert.equal(grants[0].allowed,false);
+});
+test('grant and revoke are idempotent, audited, preserve the account and invalidate old role access',async()=>{
+  const before=(await query("select count(*) n from change_logs where entity='admin_members'"))[0].n;
+  assert.equal((await setAdmin(ADMIN,B,true)).changed,true);
+  assert.equal((await setAdmin(ADMIN,B,true)).changed,false);
+  assert.equal((await asUser(B,'authenticated',()=>query('select is_admin() value')))[0].value,true);
+  assert.equal((await asUser(B,'authenticated',()=>query('select * from admin_list_accounts()'))).length,2);
+  assert.equal((await setAdmin(ADMIN,B,false)).changed,true);
+  assert.equal((await setAdmin(ADMIN,B,false)).changed,false);
+  assert.equal((await asUser(B,'authenticated',()=>query('select is_admin() value')))[0].value,false);
+  await assert.rejects(()=>setAdmin(B,B,true));
+  await assert.rejects(()=>asUser(B,'authenticated',()=>query('select * from admin_search_accounts($1)',['admin'])));
+  assert.equal((await query('select * from auth.users where id=$1',[B])).length,1);
+  assert.equal((await query('select * from profiles where id=$1',[B])).length,1);
+  const events=await query("select actor_id,action,before_data,after_data from change_logs where entity='admin_members' order by id");
+  assert.equal(events.length,before+2);assert.equal(events.at(-1).actor_id,ADMIN);
+  assert.equal(events.at(-1).action,'admin:revoked');assert.equal(events.at(-1).before_data.is_admin,true);assert.equal(events.at(-1).after_data.is_admin,false);
+  assert.equal(events.at(-1).after_data.user_id,B);
+});
+test('last admin is protected; only eligible confirmed accounts can be added, and self-demotion keeps another admin',async()=>{
+  await assert.rejects(()=>setAdmin(ADMIN,ADMIN,false),/마지막 관리자/);
+  await assert.rejects(()=>asUser(ADMIN,'authenticated',()=>query('select admin_set_membership($1,$2)',[null,true])),/대상 계정과 권한/);
+  await assert.rejects(()=>asUser(ADMIN,'authenticated',()=>query('select admin_set_membership($1,$2)',[ADMIN,null])),/대상 계정과 권한/);
+  await assert.rejects(()=>setAdmin(ADMIN,crypto.randomUUID(),true),/찾지 못/);
+  const pending=crypto.randomUUID(),banned=crypto.randomUUID(),deleted=crypto.randomUUID(),anonymous=crypto.randomUUID();
+  await db.query(`insert into auth.users(id,email,email_confirmed_at,banned_until,deleted_at,is_anonymous) values
+    ($1,'pending@example.test',null,null,null,false),($2,'banned@example.test',now(),now()+interval '1 day',null,false),
+    ($3,'deleted@example.test',now(),null,now(),false),($4,'anonymous@example.test',now(),null,null,true)`,[pending,banned,deleted,anonymous]);
+  for(const id of [pending,banned,deleted,anonymous])await assert.rejects(()=>setAdmin(ADMIN,id,true),/이메일 인증/);
+  const found=await asUser(ADMIN,'authenticated',()=>query('select * from admin_search_accounts($1)',['PENDING@EXAMPLE.TEST']));
+  assert.equal(found.length,1);assert.equal(found[0].can_grant,false);assert.equal(found[0].email_confirmed,false);
+  for(const term of ['deleted@example.test','anonymous@example.test'])assert.equal((await asUser(ADMIN,'authenticated',()=>query('select * from admin_search_accounts($1)',[term]))).length,0);
+  assert.equal((await asUser(ADMIN,'authenticated',()=>query('select * from admin_search_accounts($1)',['%%']))).length,0);
+  for(const term of ['x','x'.repeat(255)])await assert.rejects(()=>asUser(ADMIN,'authenticated',()=>query('select * from admin_search_accounts($1)',[term])));
+  await setAdmin(ADMIN,B,true);await setAdmin(ADMIN,ADMIN,false);
+  await assert.rejects(()=>setAdmin(ADMIN,ADMIN,true),/관리자 권한/);
+  await assert.rejects(()=>setAdmin(B,B,false),/마지막 관리자/);
+  await setAdmin(B,ADMIN,true);await setAdmin(B,B,false);
+  assert.deepEqual((await query('select user_id from private.admin_members')).map(r=>r.user_id),[ADMIN]);
+});
+test('role changes roll back when audit insertion fails',async()=>{
+  await db.exec(`create function private.reject_admin_test_audit() returns trigger language plpgsql as $$begin
+    if new.entity='admin_members' then raise exception 'test audit failure';end if;return new;end$$;
+    create trigger reject_admin_test_audit before insert on change_logs for each row execute function private.reject_admin_test_audit();`);
+  try{
+    await assert.rejects(()=>setAdmin(ADMIN,B,true),/test audit failure/);
+    assert.equal((await query('select * from private.admin_members where user_id=$1',[B])).length,0);
+  }finally{await db.exec('drop trigger reject_admin_test_audit on change_logs;drop function private.reject_admin_test_audit();');}
 });
 test('approval requires admin, applies catalog update and immutable review/audit once',async()=>{
   const req=(await asUser(A,'authenticated',()=>query("select submit_request('correction','16122',$1) id",[{phone:'042-TEST'}])))[0].id;

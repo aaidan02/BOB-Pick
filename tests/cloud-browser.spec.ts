@@ -2,7 +2,9 @@ import {test,expect} from '@playwright/test';
 import {legacyRecommendation} from '../supabase/functions/_shared/recommendation';
 test.beforeEach(async({page})=>{await page.route('https://oapi.map.naver.com/**',route=>route.abort());});
 async function login(page:any,email='a@example.test'){
-  await page.goto('/#account');await page.locator('#auth-email').fill(email);await page.locator('#auth-password').fill('test-password');await page.locator('#auth-submit').click();await expect(page.locator('#member-box')).toBeVisible();
+  await page.goto('/#account');await page.locator('#auth-email').fill(email);await page.locator('#auth-password').fill('test-password');
+  const signed=page.waitForResponse((r:any)=>r.url().includes('/auth/v1/token'));
+  await page.locator('#auth-submit').click();await expect(page.locator('#member-box')).toBeVisible();return (await (await signed).json()).access_token;
 }
 test('manual recommendation keeps filters, three cards, locks, price labels and menu favorites',async({page})=>{
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));await login(page);
@@ -158,4 +160,40 @@ test('mobile navigation and main pages remain usable without horizontal scrollin
     if(hash==='#admin')await page.screenshot({path:'build/admin-mobile.png',fullPage:true});
   }
   await page.setViewportSize({width:320,height:700});await page.locator('.service-nav a[href="#requests"]').click();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+test('admins manage verified accounts, revocation applies to existing sessions and the last admin is protected',async({page,browser})=>{
+  test.setTimeout(90000);
+  const staffToken=await login(page,'admin@example.test'),context=await browser.newContext(),member=await context.newPage();
+  await member.route('https://oapi.map.naver.com/**',r=>r.abort());
+  const memberToken=await login(member,'b@example.test');
+  const call=(token:string,name:string,data:Record<string,unknown>={})=>page.request.post('http://127.0.0.1:54329/rest/v1/rpc/'+name,{headers:{Authorization:'Bearer '+token},data});
+  const staffId='00000000-0000-4000-8000-000000000003',memberId='00000000-0000-4000-8000-000000000002';
+  async function search(who:any,term:string){await who.locator('#admin-account-search').fill(term);await who.locator('#admin-account-search-submit').click();await expect(who.locator('#admin-account-results .admin-user-row')).toHaveCount(1);}
+  async function grant(who:any,email:string){await search(who,email);who.once('dialog',(d:any)=>d.accept());await who.locator('#admin-account-results').getByRole('button',{name:'권한 추가',exact:true}).click();await expect(who.locator('#admin-account-status')).toHaveText('관리자 권한을 추가했습니다.');await expect(who.locator('#admin-account-count')).toHaveText('2');}
+  try{
+    const forbidden=await call(memberToken,'admin_search_accounts',{p_query:'admin'});expect((await forbidden.json()).code).toBe('42501');
+    await expect(member.locator('#admin-link')).toBeHidden();await page.locator('#admin-link').click();
+    await expect(page.locator('#admin-account-count')).toHaveText('1');await expect(page.locator('#admin-account-list button')).toBeDisabled();
+    const last=await call(staffToken,'admin_set_membership',{p_user_id:staffId,p_enabled:false});expect((await last.json()).message).toContain('마지막 관리자');
+    await search(page,'pending@example.test');await expect(page.locator('#admin-account-results')).toContainText('이메일 확인 필요');await expect(page.locator('#admin-account-results button')).toBeDisabled();
+    await grant(page,'B@EXAMPLE.TEST');await expect(page.locator('#admin-account-list')).toContainText('b@example.test');
+    await member.reload();await expect(member.locator('#admin-link')).toBeVisible();await member.locator('#admin-link').click();await expect(member.locator('#admin-account-count')).toHaveText('2');
+    page.once('dialog',d=>d.accept());await page.locator('#admin-account-list .admin-user-row').filter({hasText:'b@example.test'}).getByRole('button',{name:'권한 해제',exact:true}).click();await expect(page.locator('#admin-account-status')).toHaveText('관리자 권한을 해제했습니다.');await expect(page.locator('#admin-account-count')).toHaveText('1');
+    const revoked=await call(memberToken,'admin_set_membership',{p_user_id:memberId,p_enabled:true});expect((await revoked.json()).code).toBe('42501');
+    await member.locator('#admin-reload').click();await expect(member.locator('#admin-link')).toBeHidden();await expect(member.locator('#admin-content')).toBeHidden();
+    await member.locator('.service-nav a[href="#account"]').click();await expect(member.locator('#member-box')).toBeVisible();
+    await grant(page,'b@example.test');
+    page.once('dialog',d=>d.accept());await page.locator('#admin-account-list .admin-user-row').filter({hasText:'admin@example.test'}).getByRole('button',{name:'권한 해제',exact:true}).click();
+    await expect(page).toHaveURL(/#account$/);await expect(page.locator('#member-status')).toHaveText('관리자 권한을 해제했습니다.');await expect(page.locator('#admin-link')).toBeHidden();
+    await member.reload();await member.locator('#admin-link').click();await expect(member.locator('#admin-account-count')).toHaveText('1');await expect(member.locator('#admin-account-list button')).toBeDisabled();
+    await grant(member,'admin@example.test');
+    member.once('dialog',d=>d.accept());await member.locator('#admin-account-list .admin-user-row').filter({hasText:'b@example.test'}).getByRole('button',{name:'권한 해제',exact:true}).click();await expect(member).toHaveURL(/#account$/);await expect(member.locator('#member-box')).toBeVisible();
+    await page.reload();await page.locator('#admin-link').click();await expect(page.locator('#admin-account-count')).toHaveText('1');await expect(page.locator('#admin-logs')).toContainText('관리자 권한 · 추가');await expect(page.locator('#admin-logs')).toContainText('관리자 권한 · 해제');
+    await page.setViewportSize({width:390,height:844});await page.locator('section[aria-labelledby="admin-accounts-heading"]').screenshot({path:'build/admin-accounts-mobile.png'});
+    await page.setViewportSize({width:320,height:700});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  }finally{
+    // Restore fixture roles through the same guarded API, even if a UI assertion fails.
+    for(const token of [staffToken,memberToken]){const result=await call(token,'admin_set_membership',{p_user_id:staffId,p_enabled:true});if(result.ok())break;}
+    await call(staffToken,'admin_set_membership',{p_user_id:memberId,p_enabled:false});await context.close();
+  }
 });

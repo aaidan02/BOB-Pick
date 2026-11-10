@@ -4,5 +4,5 @@ export const db=url&&key&&!url.includes('YOUR_PROJECT')&&!key.startsWith('YOUR_'
 export function client(){if(!db)throw Error('Supabase 연결 설정이 필요합니다.');return db;}
 export async function rpc<T=any>(name:string,args:Record<string,unknown>={},signal?:AbortSignal):Promise<T>{
   let request=client().rpc(name,args);if(signal)request=request.abortSignal(signal);
-  const {data,error}=await request;if(error)throw Error(error.message);return data as T;
+  const {data,error}=await request;if(error)throw Object.assign(Error(error.message),{code:error.code});return data as T;
 }

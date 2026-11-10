@@ -43,7 +43,7 @@ export function initLegal(){
     <article class="surface legal-document" data-legal-document="privacy" aria-label="밥픽 개인정보처리방침" hidden>
       <p class="legal-date">게시일: 2026년 11월 10일</p>
       <section><h2>1. 처리하는 정보와 목적</h2><div class="legal-table-wrap"><table><thead><tr><th scope="col">구분</th><th scope="col">처리 정보</th><th scope="col">이용 목적</th></tr></thead><tbody>
-        <tr><td>회원</td><td>이메일, 회원 식별자, 닉네임, 인증 정보</td><td>가입·로그인, 계정 관리</td></tr>
+        <tr><td>회원</td><td>이메일, 회원 식별자, 닉네임, 인증·권한 정보</td><td>가입·로그인, 계정·운영 권한 관리</td></tr>
         <tr><td>메뉴 찜</td><td>회원·메뉴 식별자, 저장 시각</td><td>계정별 찜 목록 제공</td></tr>
         <tr><td>커뮤니티</td><td>제목·내용, 작성자 연결 정보, 작성·수정 시각</td><td>게시글 공개·검색·수정·삭제</td></tr>
         <tr><td>문의·신청</td><td>요청 내용, 음식점·메뉴 정보, 처리 결과·사유·이력</td><td>신청 검토와 정보 수정, 운영 이력 관리</td></tr>

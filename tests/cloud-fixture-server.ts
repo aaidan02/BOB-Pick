@@ -3,23 +3,23 @@ import {createServer} from 'node:http';
 import {PGlite} from '@electric-sql/pglite';
 import {readFileSync,readdirSync} from 'node:fs';
 const db=new PGlite();
-await db.exec(`create role anon;create role authenticated;create schema auth;create table auth.users(id uuid primary key,email text,raw_user_meta_data jsonb default '{}');
+await db.exec(`create role anon;create role authenticated;create schema auth;create table auth.users(id uuid primary key,email varchar(255),raw_user_meta_data jsonb default '{}',email_confirmed_at timestamptz,deleted_at timestamptz,banned_until timestamptz,is_anonymous boolean default false);
 create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
 grant usage on schema public,auth to anon,authenticated;grant execute on function auth.uid() to anon,authenticated;`);
 for(const file of readdirSync('supabase/migrations').sort())await db.exec(readFileSync('supabase/migrations/'+file,'utf8'));
 await db.exec(readFileSync('supabase/seed.sql','utf8'));
 const users=new Map<string,any>(),tokens=new Map<string,any>();
-for(const [suffix,email] of [['1','a@example.test'],['2','b@example.test'],['3','admin@example.test']]){
+for(const [suffix,email] of [['1','a@example.test'],['2','b@example.test'],['3','admin@example.test'],['4','pending@example.test']]){
   const id='00000000-0000-4000-8000-00000000000'+suffix;
-  const user={id,aud:'authenticated',role:'authenticated',email,email_confirmed_at:new Date().toISOString(),created_at:new Date().toISOString(),app_metadata:{provider:'email'},user_metadata:{nickname:'밥친구'+suffix}};
-  users.set(email,user);await db.query('insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3)',[id,email,user.user_metadata]);
+  const user={id,aud:'authenticated',role:'authenticated',email,email_confirmed_at:suffix==='4'?null:new Date().toISOString(),created_at:new Date().toISOString(),app_metadata:{provider:'email'},user_metadata:{nickname:'밥친구'+suffix}};
+  users.set(email,user);await db.query('insert into auth.users(id,email,raw_user_meta_data,email_confirmed_at) values($1,$2,$3,$4)',[id,email,user.user_metadata,user.email_confirmed_at]);
   if(suffix==='3')await db.query('insert into private.admin_members values($1)',[id]);
 }
 function session(user:any){
   const token=Buffer.from(JSON.stringify({alg:'HS256',typ:'JWT'})).toString('base64url')+'.'+Buffer.from(JSON.stringify({sub:user.id,aud:'authenticated',role:'authenticated',exp:Math.floor(Date.now()/1000)+3600})).toString('base64url')+'.test-only-signature';
   tokens.set(token,user);return {access_token:token,refresh_token:'test-refresh-'+user.id,expires_in:3600,expires_at:Math.floor(Date.now()/1000)+3600,token_type:'bearer',user};
 }
-const rpcArgs:Record<string,string[]>={catalog_options:[],is_admin:[],recommend_count:['p_filter'],recommend_candidates:['p_filter'],pick_restaurants:['p_filter','p_size','p_locked','p_prior'],search_posts:['p_query','p_offset','p_mine'],submit_request:['p_kind','p_restaurant_id','p_payload','p_message'],review_request:['p_request_id','p_decision','p_note'],consume_ai_quota:[]};
+const rpcArgs:Record<string,string[]>={catalog_options:[],is_admin:[],recommend_count:['p_filter'],recommend_candidates:['p_filter'],pick_restaurants:['p_filter','p_size','p_locked','p_prior'],search_posts:['p_query','p_offset','p_mine'],submit_request:['p_kind','p_restaurant_id','p_payload','p_message'],review_request:['p_request_id','p_decision','p_note'],consume_ai_quota:[],admin_list_accounts:[],admin_search_accounts:['p_query'],admin_set_membership:['p_user_id','p_enabled']};
 createServer(async(req,res)=>{
   const origin=req.headers.origin??'*';res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Access-Control-Allow-Headers','authorization,apikey,content-type,x-client-info,prefer,range,range-unit,x-supabase-api-version');res.setHeader('Access-Control-Allow-Methods','GET,POST,PATCH,DELETE,OPTIONS');
   const send=(status:number,data:any)=>{res.writeHead(status,{'Content-Type':'application/json'});res.end(data==null?'':JSON.stringify(data));};
@@ -44,7 +44,7 @@ createServer(async(req,res)=>{
       if(url.pathname.startsWith('/rest/v1/rpc/')){
         const args=rpcArgs[name];if(!args)throw Error('Unknown test RPC');
         const values=args.map(k=>body[k]??null),slots=args.map((_,i)=>'$'+(i+1)).join(',');
-        if(name==='recommend_candidates'||name==='search_posts')return (await tx.query(`select * from public.${name}(${slots})`,values)).rows;
+        if(['recommend_candidates','search_posts','admin_list_accounts','admin_search_accounts'].includes(name))return (await tx.query(`select * from public.${name}(${slots})`,values)).rows;
         return (await tx.query<any>(`select public.${name}(${slots}) value`,values)).rows[0].value;
       }
       if(!['profiles','restaurants','menus','favorites','posts','requests','change_logs','promotions'].includes(name))throw Error('Unknown test table');
