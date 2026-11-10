@@ -15,30 +15,33 @@ import {friendly} from './ui';
   let chatHistory=[],chatPicking=false,chatController=null,chatVersion=0,chatMatched=0,chatReady=false,chatClock=-1;
   let successToastTimer=null;
   const quickPrompts=[
-    '만 원 이하로 따뜻한 국물 요리 추천해줘.',
-    '8천 원 이하로 든든한 밥 메뉴 골라줘.',
-    '만 원 이하로 면 요리 추천해줘.',
-    '만 5천 원 이하로 한식 메뉴 추천해줘.',
-    '바삭한 튀김 요리가 먹고 싶어. 추천해줘.',
-    '일식 가게에서 먹을 밥 메뉴 추천해줘.',
-    '중식 가게에서 면 요리 추천해줘.',
-    '만 5천 원 이하로 양식 메뉴 추천해줘.',
-    '치킨이 먹고 싶어. 둔산동 가게 추천해줘.',
-    '피자가 먹고 싶어. 가게랑 메뉴 골라줘.',
-    '카페에서 먹을 디저트 메뉴 추천해줘.',
-    '분식 가게에서 만 원 이하 메뉴 추천해줘.',
+    {label:'따뜻한 국물',icon:'🥘',text:'만 원 이하로 따뜻한 국물 요리 추천해줘.'},
+    {label:'든든한 밥',icon:'🍚',text:'8천 원 이하로 든든한 밥 메뉴 골라줘.'},
+    {label:'후루룩 면 요리',icon:'🍜',text:'만 원 이하로 면 요리 추천해줘.'},
+    {label:'오늘은 한식',icon:'🍲',text:'만 5천 원 이하로 한식 메뉴 추천해줘.'},
+    {label:'바삭한 튀김',icon:'🍤',text:'바삭한 튀김 요리가 먹고 싶어. 추천해줘.'},
+    {label:'일식 한 끼',icon:'🍣',text:'일식 가게에서 먹을 밥 메뉴 추천해줘.'},
+    {label:'중식 면 요리',icon:'🥡',text:'중식 가게에서 면 요리 추천해줘.'},
+    {label:'양식이 당겨요',icon:'🍝',text:'만 5천 원 이하로 양식 메뉴 추천해줘.'},
+    {label:'치킨 먹는 날',icon:'🍗',text:'치킨이 먹고 싶어. 둔산동 가게 추천해줘.'},
+    {label:'피자 한 판',icon:'🍕',text:'피자가 먹고 싶어. 가게랑 메뉴 골라줘.'},
+    {label:'달콤한 디저트',icon:'🍰',text:'카페에서 먹을 디저트 메뉴 추천해줘.'},
+    {label:'가볍게 분식',icon:'🍢',text:'분식 가게에서 만 원 이하 메뉴 추천해줘.'},
   ];
   let visibleQuickPrompts=[];
   function shuffleQuickPrompts(){
     if(chatPicking)return;
     const pool=quickPrompts.filter(prompt=>!visibleQuickPrompts.includes(prompt));
     for(let i=pool.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
-    visibleQuickPrompts=pool.slice(0,4);
+    visibleQuickPrompts=pool.slice(0,2);
     el('chat-quick-options').replaceChildren(...visibleQuickPrompts.map(prompt=>{
-      const button=document.createElement('button');button.type='button';button.textContent=prompt;
+      const button=document.createElement('button'),icon=document.createElement('span'),label=document.createElement('span');
+      button.type='button';button.dataset.prompt=prompt.text;button.setAttribute('aria-label',prompt.text);button.title=prompt.text;
+      icon.className='quick-prompt-icon';icon.textContent=prompt.icon;icon.setAttribute('aria-hidden','true');
+      label.textContent=prompt.label;button.append(icon,label);
       button.onclick=()=>{
         if(chatPicking)return;
-        el('chat-input').value=prompt;el('chat-input').dispatchEvent(new Event('input',{bubbles:true}));
+        el('chat-input').value=prompt.text;el('chat-input').dispatchEvent(new Event('input',{bubbles:true}));
         el('chat-form').requestSubmit();
       };
       return button;
@@ -58,6 +61,7 @@ import {friendly} from './ui';
     });
   }
   function appendChat(role,text){
+    if(role==='user')el('chat-quick').hidden=true;
     const message={role,text:text.slice(0,1000)};
     const replaceReply=role==='assistant'&&chatHistory.at(-1)?.role==='assistant';
     if(replaceReply)chatHistory[chatHistory.length-1]=message;
@@ -148,6 +152,7 @@ const save=node.querySelector('.save-menu');save.hidden=!data.get('_menuId');sav
     el('chat-send').disabled=chatPicking||!el('chat-input').value.trim();
     el('chat-quick').querySelectorAll('button').forEach(button=>{button.disabled=chatPicking;});
     el('chat-form').setAttribute('aria-busy',String(chatPicking));
+    el('chat-conversation').dataset.busy=String(chatPicking);
     el('chat-refresh').hidden=!chatHistory.some(message=>message.role==='user');
     el('chat-refresh').disabled=chatPicking||chatLocked===3||(chatReady&&chatMatched===0)
       ||(chatShown.length>0&&chatLocked===chatShown.length&&chatMatched<=chatLocked&&chatClock===clockVersion);
@@ -383,13 +388,13 @@ const save=node.querySelector('.save-menu');save.hidden=!data.get('_menuId');sav
     event.preventDefault();const text=el('chat-input').value.trim();if(!text||chatPicking)return;
     appendChat('user',text);el('chat-input').value='';await recommendChat(true);
   };
-  el('chat-quick-shuffle').onclick=shuffleQuickPrompts;
   shuffleQuickPrompts();
   el('chat-refresh').onclick=()=>recommendChat();
   el('chat-reset').onclick=()=>{
     hideSuccessToast();
     chatVersion++;chatController?.abort();chatController=null;chatPicking=false;chatReady=false;chatMatched=0;chatHistory=[];
     el('chat-input').value='';el('chat-log').replaceChildren();el('chat-log').hidden=true;el('chat-status').textContent='';el('chat-count').textContent='';
+    shuffleQuickPrompts();
     if(activeSource==='chat'){displayVersion++;activeSource='manual';}
     if(resultSource==='chat')clearResults('manual');updatePickButton();
   };

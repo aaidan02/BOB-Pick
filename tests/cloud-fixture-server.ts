@@ -21,7 +21,7 @@ function session(user:any){
 }
 const rpcArgs:Record<string,string[]>={catalog_options:[],is_admin:[],recommend_count:['p_filter'],recommend_candidates:['p_filter'],pick_restaurants:['p_filter','p_size','p_locked','p_prior'],search_posts:['p_query','p_offset','p_mine'],submit_request:['p_kind','p_restaurant_id','p_payload','p_message'],review_request:['p_request_id','p_decision','p_note'],consume_ai_quota:[],admin_list_accounts:[],admin_search_accounts:['p_query'],admin_set_membership:['p_user_id','p_enabled']};
 createServer(async(req,res)=>{
-  const origin=req.headers.origin??'*';res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Access-Control-Allow-Headers','authorization,apikey,content-type,x-client-info,prefer,range,range-unit,x-supabase-api-version');res.setHeader('Access-Control-Allow-Methods','GET,POST,PATCH,DELETE,OPTIONS');
+  const origin=req.headers.origin??'*';res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Access-Control-Allow-Headers','authorization,apikey,content-type,x-client-info,prefer,range,range-unit,x-supabase-api-version,content-profile,accept-profile,x-retry-count');res.setHeader('Access-Control-Allow-Methods','GET,POST,PATCH,DELETE,OPTIONS');
   const send=(status:number,data:any)=>{res.writeHead(status,{'Content-Type':'application/json'});res.end(data==null?'':JSON.stringify(data));};
   if(req.method==='OPTIONS'){send(204,null);return;}
   const url=new URL(req.url!,'http://localhost'),user=tokens.get((req.headers.authorization??'').replace(/^Bearer /,''));

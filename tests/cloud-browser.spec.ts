@@ -20,6 +20,8 @@ async function expectResultsRevealed(page:any){
 test('manual recommendation keeps filters, three cards, locks, price labels and menu favorites',async({page})=>{
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));await login(page);
   await page.locator('.service-nav a[href="#filters"]').click();
+  await expect(page.locator('#min')).toBeHidden();await expect(page.locator('#pick')).toBeVisible();
+  await page.locator('#filter-details summary').focus();await page.keyboard.press('Enter');await expect(page.locator('#min')).toBeVisible();
   await page.locator('#time-enabled').uncheck();await expect(page.locator('#pick')).toBeEnabled();
   await page.locator('#pick').click();await expect(page.locator('.restaurant-card:visible')).toHaveCount(1);
   await page.locator('#category').selectOption('한식');await page.locator('#min').fill('1000');await expect(page.locator('#pick')).toBeEnabled();
@@ -66,7 +68,7 @@ test('AI uses chat rather than manual filters, scrolls results and shows a three
     const batch=await response.json();
     await route.fulfill({contentType:'application/json',body:JSON.stringify({count:batch.count,restaurants:batch.restaurants.map((item:any)=>legacyRecommendation(item,batch.count)),message:'대구탕을 골랐어요.',needsClarification:false})});
   });
-  await page.locator('.service-nav a[href="#filters"]').click();await page.locator('#max').fill('1');await expect(page.locator('#pick')).toBeDisabled();
+  await page.locator('.service-nav a[href="#filters"]').click();await page.locator('#filter-details summary').click();await page.locator('#max').fill('1');await expect(page.locator('#pick')).toBeDisabled();
   await page.locator('#chat-input').fill('미향일식 대구탕 추천해줘');await page.locator('#chat-send').click();
   await expect(page.locator('#menu')).toHaveText('대구탕');await expect(page.locator('#price')).toHaveText('30,000원');await expect(page.locator('#success-toast')).toBeVisible();
   await expect(page.locator('#results-grid')).not.toHaveClass(/multiple/);
@@ -75,7 +77,7 @@ test('AI uses chat rather than manual filters, scrolls results and shows a three
   await page.screenshot({path:'build/cloud-app-desktop.png',fullPage:true});await page.setViewportSize({width:390,height:844});
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.screenshot({path:'build/cloud-app-mobile.png',fullPage:true});
 });
-test('random quick prompts submit once, block duplicates and recover after AI errors',async({page})=>{
+test('two compact quick prompts hide on send, block duplicates and return with a new chat',async({page})=>{
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));let calls=0,expectedPrompt='';
   let release:()=>void=()=>{};const pending=new Promise<void>(resolve=>{release=resolve;});
   await page.route('**/functions/v1/ai-recommend',async route=>{
@@ -87,32 +89,59 @@ test('random quick prompts submit once, block duplicates and recover after AI er
     const batch=await response.json();
     await route.fulfill({contentType:'application/json',body:JSON.stringify({count:batch.count,restaurants:batch.restaurants.map((item:any)=>legacyRecommendation(item,batch.count)),message:'요청한 메뉴를 골랐어요.',needsClarification:false})});
   });
-  await page.goto('/#ai-chat');const options=page.locator('#chat-quick-options button');await expect(options).toHaveCount(4);
-  await options.first().click();await expect(page.locator('#chat-status')).toHaveText('AI 추천은 로그인 후 사용할 수 있습니다.');expect(calls).toBe(0);
-  await login(page);await page.locator('.service-nav a[href="#filters"]').click();await page.locator('.hero a[href="#ai-chat"]').click();await page.locator('#chat-reset').click();await expect(options).toHaveCount(4);
-  const before=await options.allTextContents();expect(new Set(before).size).toBe(4);
-  await page.locator('#chat-quick-shuffle').click();const after=await options.allTextContents();
+  await page.goto('/#ai-chat');const options=page.locator('#chat-quick-options button');await expect(options).toHaveCount(2);
+  await options.first().click();await expect(page.locator('#chat-quick')).toBeHidden();await expect(page.locator('#chat-status')).toHaveText('AI 추천은 로그인 후 사용할 수 있습니다.');expect(calls).toBe(0);
+  await login(page);await page.locator('.service-nav a[href="#filters"]').click();await page.locator('.hero a[href="#ai-chat"]').click();
+  const before=await options.evaluateAll(buttons=>buttons.map(button=>(button as HTMLButtonElement).dataset.prompt));
+  await page.locator('#chat-reset').click();await expect(page.locator('#chat-quick')).toBeVisible();await expect(options).toHaveCount(2);
+  const after=await options.evaluateAll(buttons=>buttons.map(button=>(button as HTMLButtonElement).dataset.prompt));
   expect(after.every(prompt=>!before.includes(prompt))).toBeTruthy();expect(calls).toBe(0);
+  const circle=await options.first().boundingBox();expect(circle!.width).toBeLessThanOrEqual(104);expect(Math.abs(circle!.width-circle!.height)).toBeLessThan(1);
   await page.screenshot({path:'build/quick-ai-desktop.png',fullPage:true});
   await page.setViewportSize({width:390,height:844});await page.locator('#ai-chat').screenshot({path:'build/quick-ai-mobile.png'});
   await page.setViewportSize({width:320,height:568});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
-  await page.locator('#chat-input').fill('작성 중인 문장');expectedPrompt=(await options.first().textContent())!;
+  await page.locator('#chat-input').fill('작성 중인 문장');expectedPrompt=(await options.first().getAttribute('data-prompt'))!;
   await options.first().focus();await page.keyboard.press('Enter');
   try{
     await expect.poll(()=>calls).toBe(1);await expect(page.locator('#chat-log .user')).toHaveCount(1);
     await expect(page.locator('#chat-log .user span')).toHaveText(expectedPrompt);await expect(page.locator('#chat-input')).toHaveValue('');
     await expect(page.locator('#chat-form')).toHaveAttribute('aria-busy','true');
-    await expect(page.locator('#chat-quick button:disabled')).toHaveCount(5);
+    await expect(page.locator('#chat-quick')).toBeHidden();await expect(page.locator('#chat-conversation')).toHaveAttribute('data-busy','true');
+    await expect(page.locator('#chat-quick button:disabled')).toHaveCount(2);
     await options.nth(1).evaluate(button=>(button as HTMLButtonElement).click());expect(calls).toBe(1);
   }finally{release();}
   await expect(page.locator('#chat-status')).toHaveText('AI 추천에 실패했습니다. 다시 시도해 주세요.');
-  await expect(page.locator('#chat-quick button:enabled')).toHaveCount(5);
-  expectedPrompt=(await options.nth(1).textContent())!;await options.nth(1).click();
-  await expect(page.locator('#chat-log .user')).toHaveCount(2);await expect(page.locator('.restaurant-card:visible')).toHaveCount(1);
+  await expect(page.locator('#chat-quick')).toBeHidden();await expect(page.locator('#chat-conversation')).toHaveAttribute('data-busy','false');
+  await page.locator('#chat-reset').click();await expect(page.locator('#chat-quick')).toBeVisible();
+  expectedPrompt=(await options.nth(1).getAttribute('data-prompt'))!;await options.nth(1).click();
+  await expect(page.locator('#chat-log .user')).toHaveCount(1);await expect(page.locator('.restaurant-card:visible')).toHaveCount(1);
   await expect(page.locator('#success-toast')).toBeVisible();await expect(page.locator('#chat-form')).toHaveAttribute('aria-busy','false');expect(calls).toBe(2);
   await expectResultsRevealed(page);
-  await page.locator('#chat-reset').click();await expect(page.locator('#chat-log')).toBeHidden();await expect(options).toHaveCount(4);
+  await expect(page.locator('#chat-quick')).toBeHidden();
+  await page.locator('#chat-reset').click();await expect(page.locator('#chat-log')).toBeHidden();await expect(page.locator('#chat-quick')).toBeVisible();await expect(options).toHaveCount(2);
   expect(errors).toEqual([]);
+});
+test('new chat cancels pending AI work and restores the two quick prompts',async({page})=>{
+  await login(page);await page.locator('.service-nav a[href="#filters"]').click();
+  let release:()=>void=()=>{},finished:()=>void=()=>{};
+  const pending=new Promise<void>(resolve=>{release=resolve;}),done=new Promise<void>(resolve=>{finished=resolve;});
+  await page.route('**/functions/v1/ai-recommend',async route=>{
+    await pending;
+    try{await route.fulfill({contentType:'application/json',body:JSON.stringify({count:0,restaurants:[],message:'취소한 대화의 응답',needsClarification:true})});}
+    catch(error){if(!route.request().failure())throw error;}
+    finally{finished();}
+  });
+  const requested=page.waitForRequest(request=>request.url().includes('/functions/v1/ai-recommend'));
+  await page.locator('#chat-quick-options button').first().click();await requested;
+  await expect(page.locator('#chat-conversation')).toHaveAttribute('data-busy','true');
+  const aborted=page.waitForEvent('requestfailed',request=>request.url().includes('/functions/v1/ai-recommend'));
+  try{
+    await page.locator('#chat-reset').click();expect((await aborted).failure()?.errorText).toContain('ABORTED');
+    await expect(page.locator('#chat-quick')).toBeVisible();await expect(page.locator('#chat-quick-options button')).toHaveCount(2);
+    await expect(page.locator('#chat-log')).toBeHidden();await expect(page.locator('#chat-conversation')).toHaveAttribute('data-busy','false');
+  }finally{release();await done;}
+  await expect(page.locator('#chat-log')).toBeHidden();await expect(page.locator('#chat-status')).toBeEmpty();
+  await expect(page.locator('body')).not.toContainText('취소한 대화의 응답');
 });
 test('request restaurant search supports name, address and IDs and clears stale menu selections',async({page})=>{
   let submitted=0;page.on('request',r=>{if(r.url().endsWith('/rpc/submit_request'))submitted++;});
