@@ -14,6 +14,37 @@ import {friendly} from './ui';
   let resultSource='manual',displayVersion=0,activeSource='manual';
   let chatHistory=[],chatPicking=false,chatController=null,chatVersion=0,chatMatched=0,chatReady=false,chatClock=-1;
   let successToastTimer=null;
+  const quickPrompts=[
+    '만 원 이하로 따뜻한 국물 요리 추천해줘.',
+    '8천 원 이하로 든든한 밥 메뉴 골라줘.',
+    '만 원 이하로 면 요리 추천해줘.',
+    '만 5천 원 이하로 한식 메뉴 추천해줘.',
+    '바삭한 튀김 요리가 먹고 싶어. 추천해줘.',
+    '일식 가게에서 먹을 밥 메뉴 추천해줘.',
+    '중식 가게에서 면 요리 추천해줘.',
+    '만 5천 원 이하로 양식 메뉴 추천해줘.',
+    '치킨이 먹고 싶어. 둔산동 가게 추천해줘.',
+    '피자가 먹고 싶어. 가게랑 메뉴 골라줘.',
+    '카페에서 먹을 디저트 메뉴 추천해줘.',
+    '분식 가게에서 만 원 이하 메뉴 추천해줘.',
+  ];
+  let visibleQuickPrompts=[];
+  function shuffleQuickPrompts(){
+    if(chatPicking)return;
+    const pool=quickPrompts.filter(prompt=>!visibleQuickPrompts.includes(prompt));
+    for(let i=pool.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
+    visibleQuickPrompts=pool.slice(0,4);
+    el('chat-quick-options').replaceChildren(...visibleQuickPrompts.map(prompt=>{
+      const button=document.createElement('button');button.type='button';button.textContent=prompt;
+      button.onclick=()=>{
+        if(chatPicking)return;
+        el('chat-input').value=prompt;el('chat-input').dispatchEvent(new Event('input',{bubbles:true}));
+        el('chat-form').requestSubmit();
+      };
+      return button;
+    }));
+    el('chat-quick').hidden=false;
+  }
   function hideSuccessToast(){clearTimeout(successToastTimer);successToastTimer=null;el('success-toast').hidden=true;}
   function showSuccessToast(){
     hideSuccessToast();el('success-toast').hidden=false;
@@ -115,6 +146,8 @@ const save=node.querySelector('.save-menu');save.hidden=!data.get('_menuId');sav
     const visible=slots.filter(slot=>slot.data),shown=resultSource==='manual'?visible:[],locked=shown.filter(slot=>slot.locked).length;
     const chatShown=resultSource==='chat'?visible:[],chatLocked=chatShown.filter(slot=>slot.locked).length;
     el('chat-send').disabled=chatPicking||!el('chat-input').value.trim();
+    el('chat-quick').querySelectorAll('button').forEach(button=>{button.disabled=chatPicking;});
+    el('chat-form').setAttribute('aria-busy',String(chatPicking));
     el('chat-refresh').hidden=!chatHistory.some(message=>message.role==='user');
     el('chat-refresh').disabled=chatPicking||chatLocked===3||(chatReady&&chatMatched===0)
       ||(chatShown.length>0&&chatLocked===chatShown.length&&chatMatched<=chatLocked&&chatClock===clockVersion);
@@ -350,6 +383,8 @@ const save=node.querySelector('.save-menu');save.hidden=!data.get('_menuId');sav
     event.preventDefault();const text=el('chat-input').value.trim();if(!text||chatPicking)return;
     appendChat('user',text);el('chat-input').value='';await recommendChat(true);
   };
+  el('chat-quick-shuffle').onclick=shuffleQuickPrompts;
+  shuffleQuickPrompts();
   el('chat-refresh').onclick=()=>recommendChat();
   el('chat-reset').onclick=()=>{
     hideSuccessToast();

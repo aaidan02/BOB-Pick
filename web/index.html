@@ -69,6 +69,10 @@
         <label for="chat-input">먹고 싶은 음식을 말해보세요</label>
         <div class="chat-compose"><textarea id="chat-input" rows="2" maxlength="1000" placeholder="예: 만 원 이하로 따뜻한 국물 요리 먹고 싶어"></textarea><button id="chat-send" type="submit" disabled>AI 추천받기</button></div>
       </form>
+      <section id="chat-quick" class="chat-quick" aria-labelledby="chat-quick-title" hidden>
+        <div class="chat-quick-heading"><div><h3 id="chat-quick-title">랜덤 빠른 추천</h3><p>문장을 누르면 바로 AI가 추천해요.</p></div><button id="chat-quick-shuffle" type="button">다른 예시 보기 ↻</button></div>
+        <div id="chat-quick-options" class="chat-quick-options" role="group" aria-labelledby="chat-quick-title"></div>
+      </section>
       <div class="chat-actions"><p id="chat-count"></p><button id="chat-refresh" type="button" hidden>다시 추천받기</button></div>
       <p id="chat-status" role="status" aria-live="polite"></p>
     </section>
