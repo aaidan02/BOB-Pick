@@ -3,6 +3,7 @@ import {initCommunity,loadPosts} from './community';
 import {initFavorites,loadFavorites} from './favorites';
 import {initRequests,loadRequests,loadAdmin} from './requests';
 import {el} from './ui';
+import {isLegalPage,showLegalPage} from './legal';
 
 export async function initPortal(){
   el('service-view').innerHTML=`
@@ -77,7 +78,10 @@ export async function initPortal(){
   </section>`;
   initCommunity();initFavorites();initRequests();
   function route(){
-    const page=location.hash.slice(1),service=['account','favorites','community','requests','admin'].includes(page);
+    const page=location.hash.slice(1);
+    if(isLegalPage(page)){showLegalPage(page);return;}
+    el('legal-view').hidden=true;
+    const service=['account','favorites','community','requests','admin'].includes(page);
     el('home-view').hidden=service;el('service-view').hidden=!service;
     document.querySelectorAll<HTMLElement>('.service-panel').forEach(panel=>panel.hidden=panel.id!==page+'-panel');
     if(page==='community')void loadPosts();if(page==='favorites')void loadFavorites();if(page==='requests')void loadRequests();if(page==='admin')void loadAdmin();
