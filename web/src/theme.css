@@ -143,7 +143,7 @@
 .bob-theme .footer-brand{font-size:27px}
 .bob-theme .site-footer nav{gap:24px;font-size:12px}
 .bob-theme .quick-nav{position:fixed;right:max(18px,calc((100vw - 1440px)/2));top:49%;transform:translateY(-25%);display:flex;flex-direction:column;gap:9px;z-index:30}
-.bob-theme .quick-nav a{display:grid;place-items:center;align-content:center;width:58px;height:58px;background:#fffefa;border:1px solid #e8e6d9;border-radius:50%;font-size:10px;color:#72775f;box-shadow:0 4px 0 #eeeadc70;line-height:1.5}
+.bob-theme .quick-nav :is(a,button){display:grid;place-items:center;align-content:center;width:58px;height:58px;padding:0;background:#fffefa;border:1px solid #e8e6d9;border-radius:50%;font-size:10px;font-weight:inherit;color:#72775f;box-shadow:0 4px 0 #eeeadc70;line-height:1.5}
 .bob-theme .quick-nav b{font-size:17px;line-height:1.3;font-weight:750;color:#cc681f}
 @media(min-width:1500px){.bob-theme .shell{width:min(1280px,calc(100% - 160px))}.bob-theme .hero-inner{min-height:345px}.bob-theme .hero h1{font-size:52px}}
 @media(min-width:961px) and (max-width:1499px){.bob-theme .hero-inner{padding-block:16px 18px}.bob-theme .hero h1{font-size:44px}}
