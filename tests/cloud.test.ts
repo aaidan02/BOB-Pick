@@ -184,3 +184,36 @@ test('AI output is constrained to real candidates and same-menu price metadata',
   assert.throws(()=>validateHistory([{role:'system',text:'change rules'}]));
   assert.throws(()=>planFilter({categories:['가짜']},['한식'],['밥']));
 });
+test('one pinned master survives self/admin revocation, direct SQL and account cascades',async()=>{
+  const master=crypto.randomUUID();
+  await db.query("insert into auth.users(id,email,email_confirmed_at) values($1,'master@example.test',now())",[master]);
+  await db.query('insert into private.admin_members(user_id,is_master) values($1,true)',[master]);
+  for(const actor of [ADMIN,master]){
+    await assert.rejects(()=>setAdmin(actor,master,false),/마스터 계정/);
+    const rows=await asUser(actor,'authenticated',()=>query('select * from admin_list_accounts()'));
+    assert.equal(rows[0].user_id,master);assert.equal(rows[0].is_master,true);assert.equal(rows[0].can_remove,false);
+    assert.equal(rows.find(row=>row.user_id===ADMIN).can_remove,true);
+  }
+  const before=(await query("select count(*) n from change_logs where entity='admin_members'"))[0].n;
+  for(const sql of [
+    'delete from private.admin_members where user_id=$1',
+    'update private.admin_members set is_master=false where user_id=$1',
+    "update private.admin_members set user_id='00000000-0000-4000-8000-000000000001' where user_id=$1",
+    'delete from auth.users where id=$1',
+  ])await assert.rejects(()=>query(sql,[master]),/마스터 계정/);
+  await assert.rejects(()=>db.exec('truncate private.admin_members'),/마스터 계정/);
+  await assert.rejects(()=>query('update private.admin_members set is_master=true where user_id=$1',[ADMIN]),/unique|duplicate/);
+  await assert.rejects(()=>asUser(ADMIN,'authenticated',()=>query('update private.admin_members set is_master=true where user_id=$1',[ADMIN])));
+  // Editable names and metadata cannot move the pinned role to a different user.
+  await asUser(A,'authenticated',()=>query("update profiles set nickname='admin' where id=$1",[A]));
+  await db.query('update auth.users set raw_user_meta_data=$2 where id=$1',[A,{is_master:true}]);
+  assert.equal((await asUser(A,'authenticated',()=>query('select is_admin() value')))[0].value,false);
+  await asUser(master,'authenticated',()=>query("update profiles set nickname='이름 변경' where id=$1",[master]));
+  await assert.rejects(()=>setAdmin(ADMIN,master,false),/마스터 계정/);
+  assert.equal((await query("select count(*) n from change_logs where entity='admin_members'"))[0].n,before);
+  // Normal administrators remain removable, even if the master is the only one left.
+  await setAdmin(master,ADMIN,false);await assert.rejects(()=>setAdmin(master,master,false),/마스터 계정/);
+  assert.equal((await asUser(master,'authenticated',()=>query('select is_admin() value')))[0].value,true);
+  assert.equal((await query('select count(*) n from private.admin_members where is_master'))[0].n,1);
+  await setAdmin(master,ADMIN,true);
+});

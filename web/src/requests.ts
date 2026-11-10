@@ -2,7 +2,7 @@ import {client,rpc} from './supabase';
 import {admin,user,requireUser} from './auth';
 import {action,date,el,input,message,node,friendly} from './ui';
 import {loadAdminAccounts} from './admin-accounts';
-const labels:Record<string,string>={correction:'정보 수정',registration:'음식점 등록',promotion:'홍보',pending:'대기',approved:'승인',rejected:'반려',admin:'관리자 권한',granted:'추가',revoked:'해제'};
+const labels:Record<string,string>={correction:'정보 수정',registration:'음식점 등록',promotion:'홍보',pending:'대기',approved:'승인',rejected:'반려',admin:'관리자 권한',granted:'추가',revoked:'해제',master_assigned:'마스터 지정'};
 const fieldLabels:Record<string,string>={name:'음식점 이름',address:'주소',phone:'전화번호',latitude:'위도',longitude:'경도',categories:'음식 종류',forms:'음식 형태',hours_text:'영업시간',hours_display:'영업시간',title:'홍보 제목',content:'홍보 내용',ends_at:'종료일',active:'추천 대상',price:'가격',variable_price:'변동가격'};
 type StoreOption={id:string;name:string;address:string};
 let stores:StoreOption[]=[],storesLoaded=false,storeLoad:Promise<void>|null=null;
@@ -126,7 +126,10 @@ export async function loadAdmin(){
     if(!results[1].data?.length)el('admin-reviews').append(node('p','아직 처리한 신청이 없어요.','empty-state'));
     for(const row of results[2].data??[]){
       const card=node('article','','list-card'),parts=row.action.split(':');card.append(node('h3',(labels[parts[0]]??'정보 변경')+' · '+(labels[parts[1]]??'처리 완료')),node('small',date(row.created_at)));
-      if(row.entity==='admin_members')card.append(node('p','대상: '+(row.after_data?.nickname??'회원')),node('p',(row.before_data?.is_admin?'관리자':'일반 회원')+' → '+(row.after_data?.is_admin?'관리자':'일반 회원'),'helper'));
+      if(row.entity==='admin_members'){
+        const role=(value:any)=>value?.is_master?'마스터':value?.is_admin?'관리자':'일반 회원';
+        card.append(node('p','대상: '+(row.after_data?.nickname??'회원')),node('p',role(row.before_data)+' → '+role(row.after_data),'helper'));
+      }
       const changed:Record<string,any>={};for(const [key,value] of Object.entries(row.after_data??{}))if(fieldLabels[key]&&JSON.stringify(value)!==JSON.stringify(row.before_data?.[key]))changed[key]=value;
       card.append(summary(changed));
       if(row.after_data?.menu){const before=row.before_data?.menu,after=row.after_data.menu,format=(m:any)=>m?.variable_price?'변동가격':m?.price==null?'가격 표시 없음':Number(m.price).toLocaleString('ko-KR')+'원';card.append(node('p',after.name+' · '+format(before)+' → '+format(after)));}

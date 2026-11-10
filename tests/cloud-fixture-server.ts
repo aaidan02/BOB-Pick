@@ -9,11 +9,11 @@ grant usage on schema public,auth to anon,authenticated;grant execute on functio
 for(const file of readdirSync('supabase/migrations').sort())await db.exec(readFileSync('supabase/migrations/'+file,'utf8'));
 await db.exec(readFileSync('supabase/seed.sql','utf8'));
 const users=new Map<string,any>(),tokens=new Map<string,any>();
-for(const [suffix,email] of [['1','a@example.test'],['2','b@example.test'],['3','admin@example.test'],['4','pending@example.test']]){
+for(const [suffix,email] of [['1','a@example.test'],['2','b@example.test'],['3','admin@example.test'],['4','pending@example.test'],['5','master@example.test']]){
   const id='00000000-0000-4000-8000-00000000000'+suffix;
   const user={id,aud:'authenticated',role:'authenticated',email,email_confirmed_at:suffix==='4'?null:new Date().toISOString(),created_at:new Date().toISOString(),app_metadata:{provider:'email'},user_metadata:{nickname:'밥친구'+suffix}};
   users.set(email,user);await db.query('insert into auth.users(id,email,raw_user_meta_data,email_confirmed_at) values($1,$2,$3,$4)',[id,email,user.user_metadata,user.email_confirmed_at]);
-  if(suffix==='3')await db.query('insert into private.admin_members values($1)',[id]);
+  if(['3','5'].includes(suffix))await db.query('insert into private.admin_members(user_id,is_master) values($1,$2)',[id,suffix==='5']);
 }
 function session(user:any){
   const token=Buffer.from(JSON.stringify({alg:'HS256',typ:'JWT'})).toString('base64url')+'.'+Buffer.from(JSON.stringify({sub:user.id,aud:'authenticated',role:'authenticated',exp:Math.floor(Date.now()/1000)+3600})).toString('base64url')+'.test-only-signature';

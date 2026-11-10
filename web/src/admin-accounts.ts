@@ -2,7 +2,7 @@ import {rpc} from './supabase';
 import {admin,user,refreshIdentity,requireUser} from './auth';
 import {el,friendly,input,message,node} from './ui';
 
-type AdminAccount={user_id:string;email:string;nickname:string;is_self:boolean;can_remove:boolean};
+type AdminAccount={user_id:string;email:string;nickname:string;is_self:boolean;can_remove:boolean;is_master:boolean};
 type SearchAccount={user_id:string;email:string;nickname:string;email_confirmed:boolean;is_admin:boolean;can_grant:boolean};
 let listVersion=0,searchVersion=0,busy=false,identity:string|null=null,rechecking:Promise<void>|null=null;
 
@@ -29,11 +29,11 @@ function accountRow(account:{user_id:string;email:string;nickname:string}){
   details.append(node('strong',account.nickname),node('p',account.email));row.append(details);
   return {row,details};
 }
-function roleButton(account:{user_id:string;email:string;nickname:string},enabled:boolean,allowed:boolean){
+function roleButton(account:{user_id:string;email:string;nickname:string;is_master?:boolean},enabled:boolean,allowed:boolean){
   const button=node('button',enabled?'권한 추가':'권한 해제',enabled?'':'secondary danger');button.type='button';
   button.dataset.adminAccountAction='true';button.dataset.allowed=String(allowed);button.disabled=busy||!allowed;
   button.setAttribute('aria-describedby','admin-account-'+account.user_id);
-  if(!allowed&&!enabled)button.title='마지막 관리자는 해제할 수 없습니다.';
+  if(!allowed&&!enabled)button.title=account.is_master?'마스터 계정의 관리자 권한은 해제할 수 없습니다.':'마지막 관리자는 해제할 수 없습니다.';
   button.onclick=()=>void changeMembership(account,enabled);
   return button;
 }
@@ -46,11 +46,12 @@ export async function loadAdminAccounts(){
     if(mine!==listVersion||user?.id!==who||!admin)return;
     for(const account of rows){
       const {row,details}=accountRow(account);
+      if(account.is_master)details.append(node('span','마스터','status-badge'));
       if(account.is_self)details.append(node('span','내 계정','status-badge'));
-      row.append(roleButton(account,false,account.can_remove));el('admin-account-list').append(row);
+      row.append(roleButton(account,false,account.can_remove&&!account.is_master));el('admin-account-list').append(row);
     }
     message('admin-account-count',String(rows.length));
-    message('admin-account-list-status',rows.length===1?'마지막 관리자는 다른 관리자를 먼저 추가한 뒤 해제할 수 있어요.':'');
+    message('admin-account-list-status',rows.some(account=>account.is_master)?'마스터 계정의 관리자 권한은 해제할 수 없어요.':rows.length===1?'마지막 관리자는 다른 관리자를 먼저 추가한 뒤 해제할 수 있어요.':'');
   }catch(error){if(mine===listVersion)await showError(error,'admin-account-list-status');}
 }
 async function searchAccounts(){
