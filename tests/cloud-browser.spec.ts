@@ -7,15 +7,10 @@ async function login(page:any,email='a@example.test'){
   await page.locator('#auth-submit').click();await expect(page.locator('#member-box')).toBeVisible();return (await (await signed).json()).access_token;
 }
 async function expectResultsRevealed(page:any){
-  // Browsers clamp scrollIntoView to the document end when the result is short.
-  await expect.poll(()=>page.evaluate(()=>{
-    const result=document.getElementById('results-grid')!;
-    const top=result.getBoundingClientRect().top+scrollY;
-    const margin=parseFloat(getComputedStyle(result).scrollMarginTop)||0;
-    const lastScroll=Math.max(0,document.documentElement.scrollHeight-innerHeight);
-    return Math.abs(scrollY-Math.min(Math.max(0,top-margin),lastScroll));
-  })).toBeLessThan(3);
-  await expect(page.locator('#menu')).toBeInViewport();
+  // Verify the information the visitor needs, including after layout changes.
+  await expect(page.locator('#menu')).toBeInViewport({ratio:1});
+  await expect(page.locator('#name')).toBeInViewport({ratio:1});
+  await expect(page.locator('#price')).toBeInViewport({ratio:1});
 }
 test('manual recommendation keeps filters, three cards, locks, price labels and menu favorites',async({page})=>{
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));await login(page);
@@ -25,9 +20,13 @@ test('manual recommendation keeps filters, three cards, locks, price labels and 
   await page.locator('#time-enabled').uncheck();await expect(page.locator('#pick')).toBeEnabled();
   await page.locator('#pick').click();await expect(page.locator('.restaurant-card:visible')).toHaveCount(1);
   await page.locator('#category').selectOption('한식');await page.locator('#min').fill('1000');await expect(page.locator('#pick')).toBeEnabled();
-  await page.locator('#pick').click();await expect(page.locator('.restaurant-card:visible')).toHaveCount(3);
+  const original=page.waitForRequest(r=>r.url().endsWith('/rpc/pick_restaurants'));
+  await page.locator('#pick').click();const filter=(await original).postDataJSON().p_filter;await expect(page.locator('.restaurant-card:visible')).toHaveCount(3);
   const locked=page.locator('.restaurant-card:visible').nth(1),id=await locked.getAttribute('data-restaurant-id');
-  await locked.locator('.like').check();await page.locator('#pick').click();await expect(locked).toHaveAttribute('data-restaurant-id',id!);await expect(locked.locator('.like')).toBeChecked();
+  await locked.locator('.like').check();const repeated=page.waitForRequest(r=>r.url().endsWith('/rpc/pick_restaurants'));
+  await page.locator('#result-retry').click();const retry=(await repeated).postDataJSON();expect(retry.p_filter).toEqual(filter);expect(retry.p_locked).toEqual([id]);
+  await expect(locked).toHaveAttribute('data-restaurant-id',id!);await expect(locked.locator('.like')).toBeChecked();
+  await expect(page.locator('#result-retry')).toBeEnabled();
   const favorite=locked.locator(':scope > .save-menu');await favorite.click();await expect(favorite).toHaveAttribute('aria-pressed','true');
   await page.locator('.service-nav a[href="#favorites"]').click();await expect(page.locator('#favorite-list .list-card')).toHaveCount(1);
   await page.reload();await expect(page.locator('#favorite-list .list-card')).toHaveCount(1);
@@ -61,12 +60,14 @@ test('member submits registration; admin approves; member sees immutable result 
 });
 test('AI uses chat rather than manual filters, scrolls results and shows a three-second success toast',async({page})=>{
   await login(page);let calls=0;
+  const savedFilter={checkHours:false,restaurantTerms:['미향일식'],menuTerms:['대구탕'],date:'2026-11-10',time:'12:00'};
   await page.route('**/functions/v1/ai-recommend',async route=>{
     calls++;const request=route.request(),input=request.postDataJSON();
     expect(request.headers().authorization).toMatch(/^Bearer /);expect(input.history.at(-1).text).toBe('미향일식 대구탕 추천해줘');expect(input).not.toHaveProperty('max');expect(input).not.toHaveProperty('filter');
-    const response=await page.request.post('http://127.0.0.1:54329/rest/v1/rpc/pick_restaurants',{data:{p_filter:{checkHours:false,restaurantTerms:['미향일식'],menuTerms:['대구탕']},p_size:1,p_locked:[],p_prior:{}}});
+    await page.request.post('http://127.0.0.1:54329/rest/v1/rpc/consume_ai_quota',{headers:{Authorization:request.headers().authorization},data:{}});
+    const response=await page.request.post('http://127.0.0.1:54329/rest/v1/rpc/pick_restaurants',{data:{p_filter:savedFilter,p_size:1,p_locked:[],p_prior:{}}});
     const batch=await response.json();
-    await route.fulfill({contentType:'application/json',body:JSON.stringify({count:batch.count,restaurants:batch.restaurants.map((item:any)=>legacyRecommendation(item,batch.count)),message:'대구탕을 골랐어요.',needsClarification:false})});
+    await route.fulfill({contentType:'application/json',body:JSON.stringify({count:batch.count,restaurants:batch.restaurants.map((item:any)=>legacyRecommendation(item,batch.count)),filter:savedFilter,message:'대구탕을 골랐어요.',needsClarification:false})});
   });
   await page.locator('.service-nav a[href="#filters"]').click();await page.locator('#filter-details summary').click();await page.locator('#max').fill('1');await expect(page.locator('#pick')).toBeDisabled();
   await page.locator('#chat-input').fill('미향일식 대구탕 추천해줘');await page.locator('#chat-send').click();
@@ -74,6 +75,12 @@ test('AI uses chat rather than manual filters, scrolls results and shows a three
   await expect(page.locator('#results-grid')).not.toHaveClass(/multiple/);
   await expectResultsRevealed(page);
   await expect(page.locator('#success-toast')).toBeHidden({timeout:4500});expect(calls).toBe(1);
+  await expect(page.locator('#ai-quota')).toHaveText('오늘 남은 AI 추천 19/20회');
+  // Edited manual fields cannot override the AI's frozen category/menu/time filter.
+  await page.locator('#max').fill('2');const repeated=page.waitForRequest(r=>r.url().endsWith('/rpc/pick_restaurants'));
+  await page.locator('#result-retry').click();expect((await repeated).postDataJSON().p_filter).toEqual(savedFilter);
+  await expect(page.locator('#result-retry')).toBeEnabled();await expect(page.locator('#menu')).toHaveText('대구탕');
+  await expect(page.locator('#ai-quota')).toHaveText('오늘 남은 AI 추천 19/20회');expect(calls).toBe(1);
   await page.screenshot({path:'build/cloud-app-desktop.png',fullPage:true});await page.setViewportSize({width:390,height:844});
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.screenshot({path:'build/cloud-app-mobile.png',fullPage:true});
 });
@@ -87,7 +94,7 @@ test('two compact quick prompts hide on send, block duplicates and return with a
     if(calls===1){await pending;await route.fulfill({status:502,contentType:'application/json',body:JSON.stringify({error:'AI 추천에 실패했습니다. 다시 시도해 주세요.'})});return;}
     const response=await page.request.post('http://127.0.0.1:54329/rest/v1/rpc/pick_restaurants',{data:{p_filter:{checkHours:false},p_size:1,p_locked:[],p_prior:{}}});
     const batch=await response.json();
-    await route.fulfill({contentType:'application/json',body:JSON.stringify({count:batch.count,restaurants:batch.restaurants.map((item:any)=>legacyRecommendation(item,batch.count)),message:'요청한 메뉴를 골랐어요.',needsClarification:false})});
+    await route.fulfill({contentType:'application/json',body:JSON.stringify({count:batch.count,restaurants:batch.restaurants.map((item:any)=>legacyRecommendation(item,batch.count)),filter:{checkHours:false},message:'요청한 메뉴를 골랐어요.',needsClarification:false})});
   });
   await page.goto('/#ai-chat');const options=page.locator('#chat-quick-options button');await expect(options).toHaveCount(2);
   await options.first().click();await expect(page.locator('#chat-quick')).toBeHidden();await expect(page.locator('#chat-status')).toHaveText('AI 추천은 로그인 후 사용할 수 있습니다.');expect(calls).toBe(0);
@@ -142,6 +149,25 @@ test('new chat cancels pending AI work and restores the two quick prompts',async
   }finally{release();await done;}
   await expect(page.locator('#chat-log')).toBeHidden();await expect(page.locator('#chat-status')).toBeEmpty();
   await expect(page.locator('body')).not.toContainText('취소한 대화의 응답');
+});
+test('quota display follows the signed-in account and exempts administrators',async({page})=>{
+  const token=await login(page,'b@example.test');await page.locator('.service-nav a[href="#filters"]').click();
+  await expect(page.locator('#ai-quota')).toHaveText('오늘 남은 AI 추천 20/20회');
+  await page.request.post('http://127.0.0.1:54329/rest/v1/rpc/consume_ai_quota',{headers:{Authorization:'Bearer '+token},data:{}});
+  await page.reload();await expect(page.locator('#ai-quota')).toHaveText('오늘 남은 AI 추천 19/20회');
+  await page.locator('.service-nav a[href="#account"]').click();await page.locator('#logout').click();await expect(page.locator('#auth-box')).toBeVisible();
+  await page.locator('.service-nav a[href="#filters"]').click();await expect(page.locator('#ai-quota')).toHaveText('로그인 후 AI 추천을 이용할 수 있어요.');
+  await login(page,'admin@example.test');await page.locator('.service-nav a[href="#filters"]').click();
+  await expect(page.locator('#ai-quota')).toHaveText('관리자 · AI 추천 무제한');
+});
+test('initial desktop view keeps the AI send button visible with compact quick prompts',async({page})=>{
+  await page.setViewportSize({width:1920,height:912});await page.goto('/');await expect(page.locator('#pick')).toBeEnabled();
+  for(const viewport of [{width:1920,height:912},{width:1280,height:800}]){
+    await page.setViewportSize(viewport);await page.evaluate(()=>scrollTo(0,0));
+    const box=(await page.locator('#chat-send').boundingBox())!;expect(box.y).toBeGreaterThan(0);expect(box.y+box.height).toBeLessThanOrEqual(viewport.height);
+  }
+  await page.setViewportSize({width:1920,height:912});await page.screenshot({path:'build/initial-ai-visible.png'});
+  await page.setViewportSize({width:320,height:700});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
 test('request restaurant search supports name, address and IDs and clears stale menu selections',async({page})=>{
   let submitted=0;page.on('request',r=>{if(r.url().endsWith('/rpc/submit_request'))submitted++;});

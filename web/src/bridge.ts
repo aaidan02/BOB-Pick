@@ -27,8 +27,16 @@ export async function appFetch(url:string,options:RequestInit={}):Promise<Respon
     if(parsed.pathname==='/api/chat'){
       const q=new URLSearchParams(String(options.body??'')),{locked,prior}=batchState(q);
       const {data:{session}}=await client().auth.getSession();if(!session)return new Response('AI 추천은 로그인 후 사용할 수 있습니다.',{status:401});
-      const response=await fetch(import.meta.env.VITE_SUPABASE_URL+'/functions/v1/ai-recommend',{method:'POST',headers:{'Content-Type':'application/json',apikey:import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,Authorization:'Bearer '+session.access_token},body:JSON.stringify({history:JSON.parse(q.get('history')??'[]'),size:Number(q.get('size')??3),locked,prior}),signal});
-      const data=await response.json();return new Response(response.ok?JSON.stringify(data):friendly(data.error??'AI 추천에 실패했습니다.'),{status:response.status,headers:{'Content-Type':response.ok?'application/json':'text/plain'}});
+      try{
+        const response=await fetch(import.meta.env.VITE_SUPABASE_URL+'/functions/v1/ai-recommend',{method:'POST',headers:{'Content-Type':'application/json',apikey:import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,Authorization:'Bearer '+session.access_token},body:JSON.stringify({history:JSON.parse(q.get('history')??'[]'),size:Number(q.get('size')??3),locked,prior}),signal});
+        const data=await response.json();return new Response(response.ok?JSON.stringify(data):friendly(data.error??'AI 추천에 실패했습니다.'),{status:response.status,headers:{'Content-Type':response.ok?'application/json':'text/plain'}});
+      }finally{window.dispatchEvent(new Event('ai-usage-changed'));}
+    }
+    if(parsed.pathname==='/api/retry'){
+      const {filter,size,locked,prior}=JSON.parse(String(options.body??'{}'));
+      if(!filter||typeof filter!=='object'||Array.isArray(filter))throw Error('재검색 조건을 확인해 주세요.');
+      const batch=await rpc<{count:number;restaurants:Candidate[]}>('pick_restaurants',{p_filter:filter,p_size:size,p_locked:locked,p_prior:prior},signal);
+      return Response.json({count:batch.count,restaurants:batch.restaurants.map(item=>legacyRecommendation(item,batch.count,filter))});
     }
     const filter=manualFilter(q);
     if(parsed.pathname==='/api/count')return new Response(String(await rpc('recommend_count',{p_filter:filter},signal)));

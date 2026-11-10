@@ -70,7 +70,7 @@
       </details>
     </section>
     <section id="ai-chat" class="filters" aria-label="AI 채팅 추천">
-      <div class="section-head"><div><p class="section-eyebrow">말로 편하게</p><h2>밥픽에게 물어보세요</h2></div><button id="chat-reset" type="button">새 대화</button></div>
+      <div class="section-head"><div><p class="section-eyebrow">말로 편하게</p><h2>밥픽에게 물어보세요</h2><p id="ai-quota" class="ai-quota" role="status" aria-live="polite"></p></div><button id="chat-reset" type="button">새 대화</button></div>
       <div id="chat-conversation" class="chat-conversation" data-busy="false">
         <div id="chat-log" role="log" aria-label="밥픽과의 대화" aria-live="polite" hidden></div>
         <section id="chat-quick" class="chat-quick" aria-labelledby="chat-quick-title" hidden>
@@ -88,7 +88,8 @@
     </div>
     <div id="results-grid" class="results-grid">
       <section class="pick-panel" aria-label="추천 메뉴">
-        <div class="section-head"><div><p class="section-eyebrow">오늘의 한 끼</p><h2>오늘의 추천 메뉴</h2></div></div>
+        <div class="section-head results-heading"><div><p class="section-eyebrow">오늘의 한 끼</p><h2>오늘의 추천 메뉴</h2></div><button id="result-retry" class="secondary" type="button" hidden>같은 조건으로 재검색 ↻</button></div>
+        <p id="result-retry-status" role="status" aria-live="polite"></p>
         <div id="empty-pick" class="empty-pick"><span class="empty-symbol" aria-hidden="true">밥</span><h3>오늘의 한 끼, 여기서 골라요</h3><p>조건을 고르거나 AI에게 말하면<br>어울리는 메뉴를 찾아드려요.</p></div>
         <div id="restaurant-cards" class="restaurant-cards">
         <article id="result" class="restaurant-card" hidden>

@@ -6,6 +6,7 @@ import {initPortal} from './portal';
 import {el,friendly,node} from './ui';
 import {initHelp} from './help';
 import {initLegal} from './legal';
+import {initAiQuota} from './ai-quota';
 
 async function loadPromotions(){
   if(!db)return;
@@ -24,6 +25,7 @@ async function loadPromotions(){
 async function start(){
   initHelp();
   initLegal();
+  initAiQuota();
   if(db){
     try{
       const options=await rpc<{categories:string[];forms:string[]}>('catalog_options');

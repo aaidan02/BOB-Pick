@@ -1,6 +1,6 @@
 # Supabase + Vercel 배포
 
-운영 주소는 **https://bob-pick.vercel.app**, Vercel 프로젝트는 `aaidan02/bob-pick`입니다. Supabase 초기 데이터·마이그레이션 7개·AI 함수가 적용되어 있습니다. 소스는 `feat/supabase-vercel-service` 브랜치이며 [PR #1](https://github.com/aaidan02/BOB-Pick/pull/1)에서 확인할 수 있습니다.
+운영 주소는 **https://bob-pick.vercel.app**, Vercel 프로젝트는 `aaidan02/bob-pick`입니다. Supabase 초기 데이터·마이그레이션 8개·AI 함수가 적용되어 있습니다. 소스는 `feat/supabase-vercel-service` 브랜치이며 [PR #1](https://github.com/aaidan02/BOB-Pick/pull/1)에서 확인할 수 있습니다.
 
 ## 데이터 관계
 
@@ -91,7 +91,13 @@ on conflict(user_id) do nothing;
 
 `request_reviews.request_id`는 UNIQUE 외래키이므로 PostgREST의 신청 내역 조회에서 `request_reviews`는 배열이 아닌 객체 또는 null입니다. 문의 내역과 관리자 목록은 이 형태를 처리하고, 브라우저 테스트 대역도 같은 관계 형태를 반환합니다. 사용자 화면에는 내부 JavaScript·DB 오류 대신 한국어 안내와 다시 시도할 수 있는 버튼을 표시합니다.
 
-`is_admin`, `consume_ai_quota`, `submit_request`, `review_request`와 관리자 계정 RPC는 인증된 사용자에게만 실행을 허용합니다. Supabase의 [인증 사용자 SECURITY DEFINER 안내](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable)에 해당하며 각 함수의 회원·관리자 검사와 고정 `search_path`를 유지합니다. `private.admin_members`와 `private.ai_usage`의 RLS에 허용 정책이 없는 것은 클라이언트의 직접 접근을 막기 위한 설정입니다.
+`is_admin`, `consume_ai_quota`, `ai_quota_status`, `submit_request`, `review_request`와 관리자 계정 RPC는 인증된 사용자에게만 실행을 허용합니다. Supabase의 [인증 사용자 SECURITY DEFINER 안내](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable)에 해당하며 각 함수의 회원·관리자 검사와 고정 `search_path`를 유지합니다. `private.admin_members`와 `private.ai_usage`의 RLS에 허용 정책이 없는 것은 클라이언트의 직접 접근을 막기 위한 설정입니다.
+
+## AI 횟수와 재검색
+
+`ai_quota_status()`는 호출자 본인의 한국 날짜 기준 사용량·잔여량·다음 초기화 시각만 읽으며 횟수를 차감하지 않습니다. 비로그인 실행 권한과 `private.ai_usage` 직접 접근은 차단합니다. `consume_ai_quota()`는 DB의 현재 관리자 여부를 확인해 관리자·마스터는 무제한으로 처리하고 일반 회원에게 하루 20회 제한을 적용합니다. 관리자 해제 후 기존 토큰에도 일반 회원 제한이 적용됩니다. 화면의 횟수는 로그인 변경·AI 요청 종료·창 재활성화와 한국 자정에 새로 확인합니다.
+
+수동 검색은 제출 시각을, AI는 서버가 해석한 정규화 조건을 결과와 함께 보관합니다. 공통 재검색 버튼은 이 조건을 `pick_restaurants`에 재사용하고 고정한 가게를 제외한 나머지만 다시 고릅니다. 입력창의 새 값이나 현재 시각으로 기존 결과의 기준을 바꾸지 않으며, Gemini를 추가 호출하거나 AI 횟수를 차감하지 않습니다. AI 함수의 `filter` 응답과 횟수 RPC를 먼저 적용한 뒤 웹 화면을 배포합니다.
 
 ## 네이버 지도
 

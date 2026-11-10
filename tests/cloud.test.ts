@@ -174,6 +174,26 @@ test('quota is per logged-in user and cannot be reset from the client',async()=>
   await asUser(B,'authenticated',async()=>{for(let i=0;i<20;i++)await db.exec('select consume_ai_quota()');await assert.rejects(()=>db.exec('select consume_ai_quota()'));});
   await asUser(A,'authenticated',()=>db.exec('select consume_ai_quota()'));
 });
+test('quota status is private, read-only and resets at Korean midnight; live admins are unlimited',async()=>{
+  await assert.rejects(()=>asUser(null,'anon',()=>query('select ai_quota_status() value')));
+  await assert.rejects(()=>asUser(A,'authenticated',()=>query('select * from private.ai_usage')));
+  const status=(id:string)=>asUser(id,'authenticated',async()=>(await query('select ai_quota_status() value'))[0].value);
+  assert.equal((await status(A)).used,1);assert.equal((await status(A)).remaining,19);
+  assert.equal((await status(B)).used,20);assert.equal((await status(B)).remaining,0);assert.equal((await status(B)).unlimited,false);
+  const before=await query('select * from private.ai_usage order by user_id,day');
+  await status(A);await status(B);assert.deepEqual(await query('select * from private.ai_usage order by user_id,day'),before);
+  const reset=await asUser(A,'authenticated',()=>query("select ((ai_quota_status()->>'reset_at')::timestamptz at time zone 'Asia/Seoul')::date=(ai_quota_status()->>'day')::date+1 correct"));
+  assert.equal(reset[0].correct,true);
+  await query("insert into private.ai_usage(user_id,day,calls) values($1,(now() at time zone 'Asia/Seoul')::date-1,20)",[A]);
+  assert.equal((await status(A)).remaining,19);
+  await setAdmin(ADMIN,B,true);
+  await asUser(B,'authenticated',async()=>{for(let i=0;i<25;i++)await query('select consume_ai_quota()');});
+  assert.equal((await status(B)).unlimited,true);assert.equal((await status(B)).limit,null);assert.equal((await status(B)).remaining,null);
+  await setAdmin(ADMIN,B,false);await assert.rejects(()=>asUser(B,'authenticated',()=>query('select consume_ai_quota()')),/오늘 AI 추천 횟수/);
+  assert.equal((await status(B)).unlimited,false);assert.equal((await status(B)).used,20);
+  assert.equal((await status(ADMIN)).unlimited,true);
+  assert.equal((await query("select has_function_privilege('anon','public.ai_quota_status()','EXECUTE') allowed"))[0].allowed,false);
+});
 test('AI output is constrained to real candidates and same-menu price metadata',()=>{
   const pool:any[]=[{restaurant:{id:'r',name:'식당',categories:[],forms:[],source_fields:{}},menus:[{id:'m',source_index:1,name:'육사시미',price:null,variable_price:true,forms:['회·생식']}]}];
   assert.throws(()=>validateSelection({picks:[{restaurantId:'outside',menuIndex:1}]},pool,1,{}));
