@@ -7,6 +7,7 @@ import {el,friendly,node} from './ui';
 import {initHelp} from './help';
 import {initLegal} from './legal';
 import {initAiQuota} from './ai-quota';
+import './theme.css';
 
 async function loadPromotions(){
   if(!db)return;

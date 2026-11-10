@@ -2,6 +2,12 @@
 
 운영 주소는 **https://bob-pick.vercel.app**, Vercel 프로젝트는 `aaidan02/bob-pick`입니다. Supabase 초기 데이터·마이그레이션 8개·AI 함수가 적용되어 있습니다. 소스는 `feat/supabase-vercel-service` 브랜치이며 [PR #1](https://github.com/aaidan02/BOB-Pick/pull/1)에서 확인할 수 있습니다.
 
+## 화면과 로컬 시안
+
+승인된 로컬 시안의 배너·카드·빠른 이동 메뉴·회원/관리자 화면은 `web/src/theme.css`를 공유합니다. 운영 빌드는 실제 Supabase·Gemini·네이버 지도 연결을 유지합니다. 첫 홈페이지 방문에서 사용 안내를 자동으로 열고, 브라우저의 `bob-pick:help-seen:v1` 값으로 확인 여부만 저장합니다. 계정·약관 링크로 먼저 들어온 경우 홈페이지에 도착할 때 안내하며, 이후에도 `?`로 열 수 있습니다.
+
+`npm run preview:ui`는 별도 로컬 주소 `http://localhost:4175`에서 같은 디자인을 임시 데이터베이스로 실행합니다. 역할 전환·AI 응답 예시·지도 그림은 이 시안 전용이며 운영 빌드에 포함되지 않습니다. 자세한 사용법은 [로컬 시안 안내](../ui-previews/emart-style/README.md)에 있습니다.
+
 ## 데이터 관계
 
 공통 회원키는 Supabase Auth의 `auth.users.id`(UUID)입니다. `profiles.id`, `favorites.user_id`, `posts.user_id`, `requests.user_id`, `request_reviews.reviewer_id`, `change_logs.actor_id`가 같은 회원키를 참조합니다. 활동에는 자체 ID도 있어 한 회원이 여러 건을 작성할 수 있습니다.

@@ -98,6 +98,7 @@ export async function loadRequests(){
 }
 export async function loadAdmin(){
   const mine=++adminVersion;el('admin-pending').replaceChildren();el('admin-reviews').replaceChildren();el('admin-logs').replaceChildren();
+  message('admin-summary-pending','—');message('admin-summary-changes','—');
   if(!admin){el('admin-content').hidden=true;message('admin-status','관리자 권한이 필요합니다.');return;}
   el('admin-content').hidden=false;
   void loadAdminAccounts();
@@ -110,6 +111,8 @@ export async function loadAdmin(){
     ]);
     for(const result of results)if(result.error)throw result.error;if(mine!==adminVersion||!admin)return;
     message('admin-pending-count',String(results[0].data?.length??0));
+    message('admin-summary-pending',String(results[0].data?.length??0));
+    message('admin-summary-changes',String(results[2].data?.length??0));
     for(const row of results[0].data??[]){
       const card=requestCard(row),note=node('textarea'),approve=node('button','승인'),reject=node('button','반려','secondary'),actions=node('div','','button-row');
       const noteLabel=node('label','회원에게 전달할 처리 사유');noteLabel.append(note);

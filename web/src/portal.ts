@@ -10,6 +10,7 @@ export async function initPortal(){
   el('service-view').innerHTML=`
   <section id="account-panel" class="service-panel" hidden aria-labelledby="account-heading">
     <div class="page-heading"><p class="section-eyebrow">나의 밥픽</p><h1 id="account-heading">반가워요, 밥친구!</h1><p>찜한 메뉴와 동네 이야기를 한곳에서 만나요.</p></div>
+    <aside id="account-art" class="account-art" aria-label="밥픽 소개"><h2>취향이 쌓이면,<br>한 끼가 더 즐거워져요.</h2><p>나만의 메뉴를 찜하고<br>밥친구들과 이야기를 나눠보세요.</p></aside>
     <div id="auth-box" class="surface account-surface">
       <div class="segmented" aria-label="계정 메뉴"><button type="button" data-auth-mode="login" aria-pressed="true">로그인</button><button type="button" data-auth-mode="signup" aria-pressed="false">회원가입</button></div>
       <p id="auth-hint" class="helper">이메일로 로그인하고 마음에 드는 메뉴를 저장해요.</p>
@@ -72,6 +73,11 @@ export async function initPortal(){
   <section id="admin-panel" class="service-panel" hidden aria-labelledby="admin-heading">
     <div class="page-heading heading-actions"><div><p class="section-eyebrow">밥픽 운영</p><h1 id="admin-heading">관리자</h1><p>신청을 검토하고 관리자 권한을 관리해요.</p></div><button id="admin-reload" type="button" class="secondary">새로고침</button></div>
     <p id="admin-status" class="form-status" role="status"></p><div id="admin-content" hidden>
+      <div class="admin-summary" role="group" aria-label="관리 현황">
+        <div class="admin-stat"><small>현재 관리자</small><strong id="admin-summary-members">—</strong></div>
+        <div class="admin-stat"><small>최근 대기 신청</small><strong id="admin-summary-pending">—</strong></div>
+        <div class="admin-stat"><small>최근 변경 기록</small><strong id="admin-summary-changes">—</strong></div>
+      </div>
       <section class="surface" aria-labelledby="admin-accounts-heading">
         <div class="section-head"><h2 id="admin-accounts-heading">관리자 계정 관리 <span id="admin-account-count" class="status-badge">0</span></h2></div>
         <h3>현재 관리자</h3><p id="admin-account-list-status" class="helper" role="status"></p><div id="admin-account-list"></div>
@@ -85,16 +91,22 @@ export async function initPortal(){
       <details class="surface audit-section"><summary>변경 이력 보기</summary><div id="admin-logs"></div></details>
     </div>
   </section>`;
+  el('account-art').prepend(document.querySelector('.hero-art')!.cloneNode(true));
   initCommunity();initFavorites();initRequests();initAdminAccounts();
   function route(){
     const page=location.hash.slice(1);
     if(isLegalPage(page)){showLegalPage(page);return;}
     el('legal-view').hidden=true;
     const service=['account','favorites','community','requests','admin'].includes(page);
+    const returningHome=el('home-view').hidden&&!service;
     el('home-view').hidden=service;el('service-view').hidden=!service;
     document.querySelectorAll<HTMLElement>('.service-panel').forEach(panel=>panel.hidden=panel.id!==page+'-panel');
     if(page==='community')void loadPosts();if(page==='favorites')void loadFavorites();if(page==='requests')void loadRequests();if(page==='admin')void loadAdmin();
     if(service)el('service-view').scrollIntoView({block:'start'});
+    if(returningHome)requestAnimationFrame(()=>{
+      if(el('home-view').hidden||location.hash.slice(1)!==page)return;
+      (document.getElementById(page)??el('home-view')).scrollIntoView({block:'start',behavior:'instant'});
+    });
     document.querySelectorAll<HTMLAnchorElement>('.service-nav a').forEach(link=>{
       const active=link.hash===location.hash||(!service&&link.hash==='#filters');
       if(active)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');

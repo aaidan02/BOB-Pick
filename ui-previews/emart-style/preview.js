@@ -48,39 +48,9 @@ db.auth.onAuthStateChange((_event,session)=>{
   role.value=({'a@example.test':'member','admin@example.test':'admin','master@example.test':'master'})[session?.user.email]??'visitor';
 });
 
-const hero=document.querySelector('.hero-inner'),mascot=document.querySelector('.hero-art');
-hero.querySelector('.eyebrow').textContent='YOUR EVERYDAY FOOD MATE';
-hero.querySelector('h1').innerHTML='매일 만나는 맛있는 순간,<br>오늘도 <span>밥픽해요.</span>';
-hero.querySelector('.hero-copy').textContent='오늘 뭐 먹을지 고민이라면, 취향에 맞는 한 끼를 발견해 보세요.';
-const caption=document.createElement('span');caption.className='hero-caption';caption.textContent='오늘은 뭐 먹지?';hero.append(caption);
 const map=$('map'),pin=document.createElement('span'),mapCaption=document.createElement('span');
 pin.className='preview-map-pin';pin.textContent='여기서 맛있는 한 끼';
 mapCaption.className='preview-map-caption';mapCaption.textContent='가게 위치 · 지도 배치 예시';map.append(pin,mapCaption);
 const mapObserver=new MutationObserver(()=>{pin.textContent=$('result').hidden?'여기서 맛있는 한 끼':$('name').textContent||'여기서 맛있는 한 끼';});
 mapObserver.observe($('name'),{childList:true,characterData:true,subtree:true});
 mapObserver.observe($('result'),{attributes:true,attributeFilter:['hidden']});
-const stories=document.createElement('section');stories.className='preview-stories';stories.setAttribute('aria-label','밥픽 더 즐기기');
-stories.innerHTML='<a class="preview-story" href="#community"><div><small>NEIGHBORHOOD STORY</small><h2>우리 동네 맛있는 이야기,<br>밥친구들과 나눠요.</h2></div><span aria-hidden="true">↗</span></a><a class="preview-story" href="#favorites"><div><small>MY TASTE COLLECTION</small><h2>다음에 또 먹고 싶은 한 끼,<br>내 취향만 모아두세요.</h2></div><span aria-hidden="true">♡</span></a>';
-document.querySelector('#home-view>.content').append(stories);
-const quick=document.createElement('nav');quick.className='preview-quick-nav';quick.setAttribute('aria-label','빠른 이동');
-quick.innerHTML='<a href="#filters"><b aria-hidden="true">↻</b>메뉴 뽑기</a><a href="#ai-chat"><b aria-hidden="true">✳</b>AI 추천</a><a href="#favorites"><b aria-hidden="true">♡</b>내 찜</a><a href="#"><b aria-hidden="true">↑</b>맨 위로</a>';document.body.append(quick);
-
-function enhancePortal(){
-  const account=$('account-panel');if(!account)return false;
-  const artwork=document.createElement('aside');artwork.className='preview-account-art';artwork.setAttribute('aria-label','밥픽 소개');
-  artwork.innerHTML=mascot.outerHTML+'<h2>취향이 쌓이면,<br>한 끼가 더 즐거워져요.</h2><p>나만의 메뉴를 찜하고<br>밥친구들과 이야기를 나눠보세요.</p>';
-  account.insertBefore(artwork,$('auth-box'));
-  const summary=document.createElement('div');summary.className='preview-admin-summary';summary.innerHTML='<div class="preview-admin-stat"><small>현재 관리자</small><strong data-count="admin-account-count">—</strong></div><div class="preview-admin-stat"><small>검토할 신청</small><strong data-count="admin-pending-count">—</strong></div><div class="preview-admin-stat"><small>변경 기록</small><strong id="preview-change-count">—</strong></div>';
-  $('admin-content').prepend(summary);
-  const updateCounts=()=>{
-    for(const target of summary.querySelectorAll('[data-count]'))target.textContent=$(target.dataset.count)?.textContent??String($('admin-pending').children.length);
-    $('preview-change-count').textContent=String($('admin-logs').querySelectorAll('.list-card').length);
-  };
-  for(const id of ['admin-account-count','admin-pending','admin-logs'])if($(id))new MutationObserver(updateCounts).observe($(id),{childList:true,characterData:true,subtree:true});
-  updateCounts();return true;
-}
-if(!enhancePortal()){
-  const observer=new MutationObserver(()=>{if(enhancePortal())observer.disconnect();});
-  observer.observe($('service-view'),{childList:true});
-}
-

@@ -14,6 +14,7 @@ function setBusy(value:boolean){
 function clearAccounts(){
   listVersion++;searchVersion++;
   el('admin-account-list').replaceChildren();el('admin-account-results').replaceChildren();message('admin-account-count','0');
+  message('admin-summary-members','—');
 }
 async function showError(error:unknown,statusId:string){
   message(statusId,friendly(error));
@@ -39,6 +40,7 @@ function roleButton(account:{user_id:string;email:string;nickname:string;is_mast
 }
 export async function loadAdminAccounts(){
   const mine=++listVersion,who=user?.id;el('admin-account-list').replaceChildren();
+  message('admin-summary-members','—');
   if(!admin||!who)return;
   message('admin-account-list-status','관리자 목록을 불러오고 있어요.');
   try{
@@ -51,6 +53,7 @@ export async function loadAdminAccounts(){
       row.append(roleButton(account,false,account.can_remove&&!account.is_master));el('admin-account-list').append(row);
     }
     message('admin-account-count',String(rows.length));
+    message('admin-summary-members',String(rows.length));
     message('admin-account-list-status',rows.some(account=>account.is_master)?'마스터 계정의 관리자 권한은 해제할 수 없어요.':rows.length===1?'마지막 관리자는 다른 관리자를 먼저 추가한 뒤 해제할 수 있어요.':'');
   }catch(error){if(mine===listVersion)await showError(error,'admin-account-list-status');}
 }

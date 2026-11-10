@@ -1,6 +1,6 @@
-<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">
+<!DOCTYPE html><html lang="ko" class="bob-theme"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#ffffff">
+<meta name="theme-color" content="#fffefa">
 <title>밥픽 · 오늘은 뭘 먹을까요?</title>
 </head><body>
 <a href="#filters" class="skip-link">메뉴 검색으로 바로가기</a>
@@ -32,7 +32,7 @@
 </div></header>
 <main id="home-view">
   <section class="hero"><div class="shell hero-inner">
-    <div><p class="eyebrow">대전 둔산동의 맛있는 일상</p><h1>오늘 한 끼,<br>고르는 건 <span>가볍게.</span></h1><p class="hero-copy">먹고 싶은 메뉴와 예산만 골라주세요.</p><div class="method-links"><a href="#filters" class="primary-link">조건으로 찾기 <span aria-hidden="true">→</span></a><a href="#ai-chat">AI에게 물어보기 ↗</a></div></div>
+    <div><p class="eyebrow">YOUR EVERYDAY FOOD MATE</p><h1>매일 만나는 맛있는 순간,<br>오늘도 <span>밥픽해요.</span></h1><p class="hero-copy">오늘 뭐 먹을지 고민이라면, 취향에 맞는 한 끼를 발견해 보세요.</p><div class="method-links"><a href="#filters" class="primary-link">조건으로 찾기 <span aria-hidden="true">→</span></a><a href="#ai-chat">AI에게 물어보기 ↗</a></div></div>
     <svg class="hero-art" viewBox="0 0 320 270" fill="none" aria-hidden="true">
       <ellipse cx="170" cy="244" rx="116" ry="12" fill="#f5e9c0"/>
       <path d="m234 107 38-63" stroke="#a76642" stroke-width="11" stroke-linecap="round"/><path d="m249 111 47-58" stroke="#c88a52" stroke-width="11" stroke-linecap="round"/>
@@ -46,6 +46,7 @@
       <path d="m35 112 5 14 14 5-14 5-5 14-5-14-14-5 14-5Z" fill="#ffc550"/><circle cx="306" cy="196" r="9" fill="#f7ca67"/>
       <path d="m57 72-12-7m31-6 3-15" stroke="#9db78e" stroke-width="5" stroke-linecap="round"/>
     </svg>
+    <span class="hero-caption" aria-hidden="true">오늘은 뭐 먹지?</span>
   </div></section>
   <div class="shell content">
     <div class="recommendation-workspace">
@@ -107,10 +108,17 @@
         <div id="map" aria-label="추천 음식점의 위치"></div><p id="map-status" role="status">지도를 불러오는 중입니다.</p>
       </section>
     </div>
+    <section class="home-stories" aria-label="밥픽 더 즐기기">
+      <a class="home-story" href="#community"><div><small>NEIGHBORHOOD STORY</small><h2>우리 동네 맛있는 이야기,<br>밥친구들과 나눠요.</h2></div><span aria-hidden="true">↗</span></a>
+      <a class="home-story" href="#favorites"><div><small>MY TASTE COLLECTION</small><h2>다음에 또 먹고 싶은 한 끼,<br>내 취향만 모아두세요.</h2></div><span aria-hidden="true">♡</span></a>
+    </section>
   </div>
 </main>
 <main id="service-view" class="shell content" hidden></main>
 <main id="legal-view" class="shell content" hidden></main>
 <footer class="site-footer"><div class="shell footer-inner"><a class="footer-brand" href="#">밥픽<span aria-hidden="true">.</span></a><nav aria-label="약관 및 정책"><a href="#terms">이용약관</a><a href="#privacy">개인정보처리방침</a><a href="#sources">데이터 출처</a></nav></div></footer>
+<nav class="quick-nav" aria-label="빠른 이동">
+  <a href="#filters"><b aria-hidden="true">↻</b>메뉴 뽑기</a><a href="#ai-chat"><b aria-hidden="true">✳</b>AI 추천</a><a href="#favorites"><b aria-hidden="true">♡</b>내 찜</a><a href="#"><b aria-hidden="true">↑</b>맨 위로</a>
+</nav>
 <div id="success-toast" class="success-toast" role="status" aria-live="polite" aria-atomic="true" hidden><span class="check" aria-hidden="true">✓</span><p><strong>성공!</strong><br>AI 추천이 완료됐어요.</p></div>
 <script type="module" src="/src/main.ts"></script></body></html>
