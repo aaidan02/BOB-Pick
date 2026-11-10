@@ -10,6 +10,7 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0",
+    "preview:ui": "node scripts/preview-ui.mjs",
     "test": "node --import tsx --test tests/cloud.test.ts tests/naver.test.ts",
     "test:browser": "playwright test",
     "data:export": "python3 scripts/export_cloud.py",

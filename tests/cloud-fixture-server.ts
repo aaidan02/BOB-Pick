@@ -78,4 +78,4 @@ createServer(async(req,res)=>{
     });
     send(req.method==='GET'||url.pathname.includes('/rpc/')||result!==null?200:req.method==='POST'?201:204,result);
   }catch(error){send(400,{message:(error as Error).message,code:(error as any).code??'TEST'});}
-}).listen(54329,'127.0.0.1',()=>console.log('Test-only Supabase facade ready'));
+}).listen(Number(process.env.BOB_PICK_FIXTURE_PORT??54329),'127.0.0.1',()=>console.log('Test-only Supabase facade ready'));

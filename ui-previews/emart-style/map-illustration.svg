@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 460" fill="none">
+<rect width="700" height="460" fill="#eef0e3"/>
+<g fill="#e2e9d4"><rect x="24" y="36" width="145" height="110" rx="30"/><rect x="421" y="240" width="180" height="150" rx="35"/><rect x="477" y="20" width="178" height="117" rx="23"/><rect x="87" y="280" width="140" height="155" rx="26"/></g>
+<path d="M-20 300C120 170 60 58 250-10M415 480C430 318 638 300 725 230" stroke="#d6e9eb" stroke-width="45"/>
+<g stroke="#fffdf4" stroke-width="15"><path d="M-10 198H710M310-20V480M-20 394 714 34M-10 68 710 390"/><path d="M180-20V470M-10 328H710M556-20V480" stroke-width="9"/></g>
+<g fill="#e5e0d1"><rect x="214" y="94" width="45" height="39" rx="7"/><rect x="345" y="62" width="52" height="70" rx="8"/><rect x="374" y="250" width="38" height="39" rx="6"/><rect x="218" y="227" width="44" height="31" rx="6"/><rect x="603" y="266" width="44" height="28" rx="7"/></g>
+<g font-family="system-ui,sans-serif" font-size="13" fill="#9ca78b"><text x="62" y="97">공원</text><text x="482" y="323">산책길</text><text x="351" y="425">둔산동</text></g>
+</svg>

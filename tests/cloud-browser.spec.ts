@@ -1,7 +1,62 @@
 import {test,expect} from '@playwright/test';
 import {legacyRecommendation} from '../supabase/functions/_shared/recommendation';
 import {naverMapSdkFixture} from './naver-sdk-fixture';
-test.beforeEach(async({page})=>{await page.route('https://oapi.map.naver.com/**',route=>route.abort());});
+test.beforeEach(async({page})=>{
+  await page.route('https://oapi.map.naver.com/**',route=>route.abort());
+  // Existing feature flows start after onboarding. Guide tests use clean contexts.
+  await page.addInitScript(()=>localStorage.setItem('bob-pick:help-seen:v1','1'));
+});
+
+test('first-visit help opens once per browser, remains accessible manually, and fits mobile',async({browser})=>{
+  for(const viewport of [{width:1280,height:900},{width:390,height:844}]){
+    const context=await browser.newContext({viewport}),page=await context.newPage();
+    try{
+      await page.route('https://oapi.map.naver.com/**',route=>route.abort());
+      await page.goto('/');
+      const guide=page.getByRole('dialog',{name:'밥픽, 이렇게 사용해요'}),toggle=page.getByRole('button',{name:'사이트 사용법'});
+      await expect(guide).toBeVisible();await expect(toggle).toHaveAttribute('aria-expanded','true');
+      await expect(page.getByRole('button',{name:'사용법 닫기'})).toBeFocused();
+      expect(await guide.evaluate(element=>{const box=element.getBoundingClientRect();return box.left>=0&&box.right<=innerWidth&&box.bottom<=innerHeight;})).toBe(true);
+      await page.keyboard.press('Escape');await expect(guide).toBeHidden();await expect(toggle).toBeFocused();
+      await page.reload();await expect(toggle).toHaveAttribute('aria-expanded','false');await expect(guide).toBeHidden();
+      await toggle.click();await expect(guide).toBeVisible();
+      await page.getByRole('button',{name:'사용법 닫기'}).click();await expect(toggle).toBeFocused();await expect(guide).toBeHidden();
+      await toggle.click();await page.locator('.brand').click();await expect(guide).toBeHidden();
+      expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    }finally{await context.close();}
+  }
+});
+
+test('first-visit help waits for the homepage when the first link is an account or legal page',async({browser})=>{
+  const context=await browser.newContext(),page=await context.newPage();
+  try{
+    await page.route('https://oapi.map.naver.com/**',route=>route.abort());
+    await page.goto('/#account');await expect(page.locator('#auth-box')).toBeVisible();await expect(page.locator('#site-help')).toBeHidden();
+    expect(await page.evaluate(()=>localStorage.getItem('bob-pick:help-seen:v1'))).toBeNull();
+    await page.locator('.site-footer a[href="#terms"]').click();await expect(page.locator('#legal-heading')).toHaveText('이용약관');await expect(page.locator('#site-help')).toBeHidden();
+    await page.locator('.service-nav a[href="#filters"]').click();await expect(page.locator('#site-help')).toBeVisible();
+    await page.locator('.service-nav a[href="#community"]').click();await expect(page.locator('#site-help')).toBeHidden();
+    await page.locator('.brand').click();await expect(page.locator('#site-help')).toBeHidden();
+    await page.reload();await expect(page.locator('#site-help-toggle')).toHaveAttribute('aria-expanded','false');
+  }finally{await context.close();}
+});
+
+test('first-visit help still works without browser storage or a ready catalog API',async({browser})=>{
+  const context=await browser.newContext(),page=await context.newPage();
+  try{
+    await page.route('https://oapi.map.naver.com/**',route=>route.abort());
+    await page.addInitScript(()=>{
+      const get=Storage.prototype.getItem,set=Storage.prototype.setItem;
+      Storage.prototype.getItem=function(key){if(key==='bob-pick:help-seen:v1')throw new DOMException('Storage blocked','SecurityError');return get.call(this,key);};
+      Storage.prototype.setItem=function(key,value){if(key==='bob-pick:help-seen:v1')throw new DOMException('Storage blocked','SecurityError');set.call(this,key,value);};
+    });
+    await page.route('**/rest/v1/rpc/catalog_options',()=>{});
+    await page.goto('/');await expect(page.locator('#site-help')).toBeVisible();
+    await page.locator('#site-help-close').click();await page.locator('.service-nav a[href="#community"]').click();
+    await page.locator('.brand').click();await expect(page.locator('#site-help')).toBeHidden();
+    await page.locator('#site-help-toggle').click();await expect(page.locator('#site-help')).toBeVisible();
+  }finally{await context.close();}
+});
 async function login(page:any,email='a@example.test'){
   await page.goto('/#account');await page.locator('#auth-email').fill(email);await page.locator('#auth-password').fill('test-password');
   const signed=page.waitForResponse((r:any)=>r.url().includes('/auth/v1/token'));
