@@ -4,6 +4,7 @@ import {db,rpc} from './supabase';
 import {directionsUrl} from './bridge';
 import {initPortal} from './portal';
 import {el,friendly,node} from './ui';
+import {initHelp} from './help';
 
 async function loadPromotions(){
   if(!db)return;
@@ -20,6 +21,7 @@ async function loadPromotions(){
 }
 
 async function start(){
+  initHelp();
   if(db){
     try{
       const options=await rpc<{categories:string[];forms:string[]}>('catalog_options');

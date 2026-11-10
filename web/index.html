@@ -14,7 +14,21 @@
     <a href="#account" id="account-link"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/></svg><span id="account-nav-label">로그인</span></a>
     <a href="#admin" id="admin-link" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 8 4v6c0 5-8 10-8 10S4 17 4 12V6Z"/><path d="m8 12 3 3 5-6"/></svg><span>관리자</span></a>
   </nav>
-  <span class="location"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 0 1 14 0Z"/><circle cx="12" cy="10" r="2"/></svg>둔산동</span>
+  <div class="header-actions" id="site-help-container">
+    <span class="location"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 0 1 14 0Z"/><circle cx="12" cy="10" r="2"/></svg>둔산동</span>
+    <button id="site-help-toggle" class="help-toggle" type="button" aria-label="사이트 사용법" aria-expanded="false" aria-controls="site-help" aria-haspopup="dialog"><span aria-hidden="true">?</span></button>
+    <section id="site-help" class="site-help" role="dialog" aria-labelledby="site-help-title" hidden>
+      <div class="help-heading"><h2 id="site-help-title">밥픽, 이렇게 사용해요</h2><button id="site-help-close" type="button" aria-label="사용법 닫기">×</button></div>
+      <div class="help-content"><ol class="help-steps">
+        <li><strong>고민 없이 한 곳 뽑기</strong><p>기본 설정에서 ‘오늘의 메뉴 뽑기’를 눌러보세요.</p></li>
+        <li><strong>내 취향에 맞는 가게 찾기</strong><p>가격·음식 종류·형태나 방문 일시를 고르면 최대 3곳을 추천해요. 방문 일시의 기본값은 현재예요.</p></li>
+        <li><strong>마음에 드는 가게는 고정</strong><p>‘마음에 들어요’를 체크하고 ‘새로고침’을 누르면 나머지 가게만 다시 골라줘요.</p></li>
+        <li><strong>AI에게 말로 부탁하기</strong><p>로그인 후 ‘만 원 이하 국물 요리 추천해줘’처럼 채팅으로 물어보세요.</p></li>
+        <li><strong>메뉴를 찜하고 찾아가기</strong><p>로그인하면 ‘메뉴 찜하기’로 저장할 수 있어요. ‘네이버 길찾기’로 가게를 찾아가세요.</p></li>
+        <li><strong>동네 이야기와 문의</strong><p>‘동네 이야기’에서 후기를 나누고, 가게 정보가 다르면 ‘문의·신청’으로 알려주세요.</p></li>
+      </ol></div>
+    </section>
+  </div>
 </div></header>
 <main id="home-view">
   <section class="hero"><div class="shell hero-inner">
