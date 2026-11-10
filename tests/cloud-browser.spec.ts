@@ -6,6 +6,17 @@ async function login(page:any,email='a@example.test'){
   const signed=page.waitForResponse((r:any)=>r.url().includes('/auth/v1/token'));
   await page.locator('#auth-submit').click();await expect(page.locator('#member-box')).toBeVisible();return (await (await signed).json()).access_token;
 }
+async function expectResultsRevealed(page:any){
+  // Browsers clamp scrollIntoView to the document end when the result is short.
+  await expect.poll(()=>page.evaluate(()=>{
+    const result=document.getElementById('results-grid')!;
+    const top=result.getBoundingClientRect().top+scrollY;
+    const margin=parseFloat(getComputedStyle(result).scrollMarginTop)||0;
+    const lastScroll=Math.max(0,document.documentElement.scrollHeight-innerHeight);
+    return Math.abs(scrollY-Math.min(Math.max(0,top-margin),lastScroll));
+  })).toBeLessThan(3);
+  await expect(page.locator('#menu')).toBeInViewport();
+}
 test('manual recommendation keeps filters, three cards, locks, price labels and menu favorites',async({page})=>{
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));await login(page);
   await page.locator('.service-nav a[href="#filters"]').click();
@@ -59,7 +70,7 @@ test('AI uses chat rather than manual filters, scrolls results and shows a three
   await page.locator('#chat-input').fill('미향일식 대구탕 추천해줘');await page.locator('#chat-send').click();
   await expect(page.locator('#menu')).toHaveText('대구탕');await expect(page.locator('#price')).toHaveText('30,000원');await expect(page.locator('#success-toast')).toBeVisible();
   await expect(page.locator('#results-grid')).not.toHaveClass(/multiple/);
-  await expect.poll(async()=>(await page.locator('#results-grid').boundingBox())?.y??999).toBeLessThan(100);
+  await expectResultsRevealed(page);
   await expect(page.locator('#success-toast')).toBeHidden({timeout:4500});expect(calls).toBe(1);
   await page.screenshot({path:'build/cloud-app-desktop.png',fullPage:true});await page.setViewportSize({width:390,height:844});
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.screenshot({path:'build/cloud-app-mobile.png',fullPage:true});
@@ -99,7 +110,7 @@ test('random quick prompts submit once, block duplicates and recover after AI er
   expectedPrompt=(await options.nth(1).textContent())!;await options.nth(1).click();
   await expect(page.locator('#chat-log .user')).toHaveCount(2);await expect(page.locator('.restaurant-card:visible')).toHaveCount(1);
   await expect(page.locator('#success-toast')).toBeVisible();await expect(page.locator('#chat-form')).toHaveAttribute('aria-busy','false');expect(calls).toBe(2);
-  await expect.poll(async()=>(await page.locator('#results-grid').boundingBox())?.y??999).toBeLessThan(100);
+  await expectResultsRevealed(page);
   await page.locator('#chat-reset').click();await expect(page.locator('#chat-log')).toBeHidden();await expect(options).toHaveCount(4);
   expect(errors).toEqual([]);
 });
