@@ -9,6 +9,8 @@ import {friendly} from './ui';
   }
   let total=0,matched=0,previous=null,previousMenu=null,current=null,map=null,mapError=false,version=0;
   const markers=new Map();
+  let mapSdkReady=false,mapLayoutFrame=0,mapWasVisible=false,mapWidth=0,mapHeight=0,mapPixelRatio=window.devicePixelRatio||1;
+  let mapNeedsPosition=false,mapForceRefresh=false;
   let timer,countController=null,pickController=null;
   let autoTime=true,lastDate='',picking=false,countReady=false,clockVersion=0,selectedClockVersion=-1;
   let resultSource='manual',displayVersion=0,activeSource='manual';
@@ -82,10 +84,11 @@ import {friendly} from './ui';
   function clearResults(source){
     lastRecommendation=null;retryController?.abort();retryController=null;retrying=false;
     el('result-retry').hidden=true;el('result-retry-status').textContent='';
-    resultSource=source;current=null;clearMarker();
+    resultSource=source;current=null;clearMarker();mapNeedsPosition=false;
     el('results-grid').dataset.source=source;
     slots.forEach(slot=>{slot.data=null;slot.locked=false;renderCard(slot);});
     el('results-grid').classList.toggle('multiple',source==='chat'||multipleMode());
+    scheduleMapLayout();
     el('empty-pick').hidden=false;
     if(!mapError)el('map-status').textContent=map?'음식점을 뽑으면 위치를 표시합니다.':'지도를 불러오는 중입니다.';
   }
@@ -132,6 +135,7 @@ const save=node.querySelector('.save-menu');save.hidden=!data.get('_menuId');sav
   function showPickStatus(){
     const shown=slots.filter(slot=>slot.data);
     el('results-grid').classList.toggle('multiple',shown.length>1);
+    scheduleMapLayout();
     if(resultSource==='chat'){
       el('chat-status').textContent=shown.length&&shown.every(slot=>slot.locked)?'고정을 해제하면 다시 추천받을 수 있어요.':'';return;
     }
@@ -179,7 +183,42 @@ const save=node.querySelector('.save-menu');save.hidden=!data.get('_menuId');sav
   }
   function clearMarker(){markers.forEach(marker=>marker.setMap(null));markers.clear();}
   function failMap(message){mapError=true;clearMarker();el('map-status').textContent=message;}
-  function showPosition(){
+  // The SDK caches its viewport. SPA visibility and CSS-grid changes do not
+  // necessarily produce a browser resize event, so synchronize after layout.
+  function scheduleMapLayout(force=false){
+    mapForceRefresh=mapForceRefresh||force;
+    if(mapLayoutFrame)return;
+    mapLayoutFrame=requestAnimationFrame(()=>{
+      mapLayoutFrame=0;
+      const node=el('map'),width=node.clientWidth,height=node.clientHeight;
+      if(el('home-view').hidden||!width||!height){mapWasVisible=false;return;}
+      if(mapError||mapAuthFailed)return;
+      if(!mapSdkReady){if(mapNeedsPosition)renderMapPosition();return;}
+      try{
+        if(!map){
+          map=new naver.maps.Map('map',{center:new naver.maps.LatLng(36.3504,127.3845),zoom:14,zoomControl:true});
+          if(mapError||mapAuthFailed)return;
+          mapNeedsPosition=true;el('map-status').textContent='음식점을 뽑으면 위치를 표시합니다.';
+        }
+        const sizeChanged=width!==mapWidth||height!==mapHeight,pixelRatio=window.devicePixelRatio||1;
+        const refresh=mapForceRefresh||!mapWasVisible||pixelRatio!==mapPixelRatio;
+        if(sizeChanged||refresh){
+          const center=map.getCenter?.();
+          // Keep the percentage-based CSS sizing; setSize would pin pixel sizes.
+          map.autoResize?.();
+          if(center)map.setCenter?.(center);
+          if(refresh)map.refresh?.(true);
+        }
+        mapWidth=width;mapHeight=height;mapPixelRatio=pixelRatio;mapWasVisible=true;mapForceRefresh=false;
+        // Fit selected places only after the new viewport has been measured.
+        if(mapNeedsPosition||(sizeChanged&&markers.size>1)){
+          mapNeedsPosition=false;renderMapPosition();
+        }
+      }catch{failMap('지도 크기를 조정하지 못했습니다. 네이버 길찾기를 이용해 주세요.');}
+    });
+  }
+  function showPosition(){mapNeedsPosition=true;scheduleMapLayout();}
+  function renderMapPosition(){
     if(mapError)return;
     const shown=slots.filter(slot=>slot.data),valid=shown.filter(({data})=>{
       const a=data.get('위도'),b=data.get('경도'),lat=Number(a),lng=Number(b);
@@ -215,13 +254,17 @@ const save=node.querySelector('.save-menu');save.hidden=!data.get('_menuId');sav
   sdk.src='https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId='+encodeURIComponent(import.meta.env.VITE_NAVER_MAP_CLIENT_ID||'');
   sdk.onload=()=>{
     clearTimeout(mapTimeout);if(mapAuthFailed)return;
-    mapError=false;
-    try{
-      map=new naver.maps.Map('map',{center:new naver.maps.LatLng(36.3504,127.3845),zoom:14,zoomControl:true});
-      if(mapError)return;el('map-status').textContent='음식점을 뽑으면 위치를 표시합니다.';showPosition();
-    }catch{failMap('지도를 불러오지 못했습니다. 네이버 길찾기를 이용해 주세요.');}
+    mapError=false;mapSdkReady=true;mapNeedsPosition=true;
+    el('map-status').textContent='음식점을 뽑으면 위치를 표시합니다.';scheduleMapLayout();
   };
   sdk.onerror=()=>{clearTimeout(mapTimeout);failMap('지도 연결 실패. 네이버 길찾기를 이용해 주세요.');};
+  if(typeof ResizeObserver==='function'){
+    const observer=new ResizeObserver(()=>scheduleMapLayout());observer.observe(el('map'));
+  }
+  window.addEventListener('resize',()=>scheduleMapLayout());
+  window.addEventListener('hashchange',()=>{if(el('home-view').hidden)mapWasVisible=false;scheduleMapLayout();});
+  window.addEventListener('pageshow',()=>scheduleMapLayout(true));
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')scheduleMapLayout(true);});
   document.head.append(sdk);
   async function getText(url,signal,options={}){
     const timeout=AbortSignal.timeout(options.method==='POST'?120000:10000);

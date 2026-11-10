@@ -103,6 +103,10 @@ on conflict(user_id) do nothing;
 
 Naver Cloud Maps 애플리케이션의 Web 서비스 URL에 운영 origin을 추가하고 공개 client ID를 `VITE_NAVER_MAP_CLIENT_ID`에 설정합니다. 네이버 길찾기는 별도로 사용할 수 있으며 출발지에 임의 위치를 넣지 않습니다.
 
+지도는 숨겨진 화면에서 생성하지 않고 컨테이너의 너비·높이가 확보된 뒤 초기화합니다. `ResizeObserver`와 화면 복귀 이벤트에서 공식 [`autoResize()`·`refresh()`](https://navermaps.github.io/maps.js.ncp/docs/naver.maps.Map.html)를 호출하며, 새 레이아웃을 반영한 뒤 선택 가게의 범위를 맞춥니다. 지도 인스턴스는 재사용하고 일반 화면 복귀에서는 현재 중심과 줌을 유지합니다. 여러 가게가 선택된 상태에서 너비가 바뀌면 선택 가게가 함께 보이도록 범위를 다시 맞춥니다.
+
+회귀 검사는 지도 SDK의 뷰포트 캐시를 모델링한 대역을 사용하며, 수정 전에는 너비 전환과 숨겨진 초기화 사례가 실패하고 수정 후에는 통과하는 것을 확인했습니다. 실행 환경의 프록시가 `oapi.map.naver.com` SDK 요청을 403으로 차단하므로 실제 네이버 인증·타일 응답은 이 검사에 포함하지 않습니다.
+
 ## 검증 범위
 
 GitHub Actions는 웹 빌드·Edge 타입 검사·PostgreSQL/RLS·브라우저 테스트를 수행합니다. 로컬 대역 테스트와 실제 운영 메일·Gemini 모델 권한·지도 인증의 검증은 구분합니다. 실제 계정으로 가입·찜 재접속·신청·관리자 처리·AI 추천·휴대폰 접속을 확인합니다.

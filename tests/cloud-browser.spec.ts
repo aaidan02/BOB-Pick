@@ -1,5 +1,6 @@
 import {test,expect} from '@playwright/test';
 import {legacyRecommendation} from '../supabase/functions/_shared/recommendation';
+import {naverMapSdkFixture} from './naver-sdk-fixture';
 test.beforeEach(async({page})=>{await page.route('https://oapi.map.naver.com/**',route=>route.abort());});
 async function login(page:any,email='a@example.test'){
   await page.goto('/#account');await page.locator('#auth-email').fill(email);await page.locator('#auth-password').fill('test-password');
@@ -196,6 +197,39 @@ test('request restaurant search supports name, address and IDs and clears stale 
   await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
   await page.screenshot({path:'build/request-search-mobile.png',fullPage:true});
 });
+test('map viewport follows grid changes, hidden views, mobile sizes and zoom pixel ratios',async({page})=>{
+  await page.unroute('https://oapi.map.naver.com/**');
+  await page.route('https://oapi.map.naver.com/**',route=>route.fulfill({contentType:'text/javascript',body:naverMapSdkFixture}));
+  await page.goto('/');await expect(page.locator('.test-map-tiles')).toBeVisible();
+  async function filled(){await expect.poll(()=>page.evaluate(()=>{
+    const node=document.getElementById('map')!,tiles=node.querySelector('.test-map-tiles') as HTMLElement;
+    return !!tiles&&tiles.offsetWidth===node.clientWidth&&tiles.offsetHeight===node.clientHeight;
+  })).toBe(true);}
+  await filled();await page.locator('#filter-details summary').click();await page.locator('#time-enabled').uncheck();await page.locator('#category').selectOption('한식');
+  await expect(page.locator('#results-grid')).toHaveClass(/multiple/);await filled();
+  await expect(page.locator('#pick')).toBeEnabled();await page.locator('#pick').click();await expect(page.locator('.restaurant-card:visible')).toHaveCount(3);
+  await expect.poll(()=>page.evaluate(()=>(window as any).mapTest.fits.length)).toBeGreaterThan(0);
+  expect(await page.evaluate(()=>(window as any).mapTest.fits.every((fit:any)=>fit.width===fit.container&&fit.points===3))).toBe(true);
+  await page.setViewportSize({width:390,height:844});await filled();await page.setViewportSize({width:1280,height:720});await filled();
+  await page.locator('#category').selectOption('');await expect(page.locator('#results-grid')).not.toHaveClass(/multiple/);await filled();
+  await page.evaluate(()=>{const map=(window as any).testNaverMap;map.setCenter({lat:36.42,lng:127.48});map.setZoom(18);});
+  await page.locator('.service-nav a[href="#community"]').click();await expect(page.locator('#map')).toBeHidden();
+  await page.setViewportSize({width:1024,height:768});await page.locator('.service-nav a[href="#filters"]').click();await filled();
+  await page.locator('.site-footer a[href="#privacy"]').click();await expect(page.locator('#map')).toBeHidden();await page.locator('.service-nav a[href="#filters"]').click();await filled();
+  const before=await page.evaluate(()=>(window as any).mapTest.refreshes);
+  const session=await page.context().newCDPSession(page);
+  await session.send('Emulation.setDeviceMetricsOverride',{width:1024,height:768,deviceScaleFactor:2,mobile:false});await page.evaluate(()=>window.dispatchEvent(new Event('resize')));
+  await expect.poll(()=>page.evaluate(()=>(window as any).mapTest.refreshes)).toBeGreaterThan(before);
+  const state=await page.evaluate(()=>({instances:(window as any).mapTest.instances,center:(window as any).testNaverMap.getCenter(),zoom:(window as any).testNaverMap.getZoom(),sizes:(window as any).mapTest.resizes}));
+  expect(state.instances).toBe(1);expect(state.center).toEqual({lat:36.42,lng:127.48});expect(state.zoom).toBe(18);expect(state.sizes.every((s:any)=>s.width>0&&s.height>0)).toBe(true);
+});
+test('map creation waits until a previously hidden home view has a usable size',async({page})=>{
+  await page.unroute('https://oapi.map.naver.com/**');await page.route('https://oapi.map.naver.com/**',route=>route.fulfill({contentType:'text/javascript',body:naverMapSdkFixture}));
+  await page.goto('/#account');await page.waitForFunction(()=>!!(window as any).naver);
+  expect(await page.evaluate(()=>(window as any).mapTest.instances)).toBe(0);
+  await page.locator('.service-nav a[href="#filters"]').click();await expect(page.locator('.test-map-tiles')).toBeVisible();
+  expect(await page.evaluate(()=>(window as any).mapTest.instances)).toBe(1);
+});
 test('a map script that arrives after the delay message still initializes successfully',async({page})=>{
   await page.clock.install();
   let release!:()=>void,requested!:()=>void;
@@ -209,6 +243,8 @@ test('a map script that arrives after the delay message still initializes succes
   try{
     await page.clock.runFor(13000);await expect(page.locator('#map-status')).toContainText('지연');
     release();await expect(page.locator('#map-status')).toHaveText('음식점을 뽑으면 위치를 표시합니다.');
+    expect(await page.evaluate(()=>(window as any).mapCreated??false)).toBe(false);
+    await page.locator('.service-nav a[href="#filters"]').click();await page.clock.runFor(100);
     expect(await page.evaluate(()=>(window as any).mapCreated)).toBe(true);
   }finally{release();}
 });
