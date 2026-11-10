@@ -244,8 +244,8 @@ test('a map script that arrives after the delay message still initializes succes
     await page.clock.runFor(13000);await expect(page.locator('#map-status')).toContainText('지연');
     release();await expect(page.locator('#map-status')).toHaveText('음식점을 뽑으면 위치를 표시합니다.');
     expect(await page.evaluate(()=>(window as any).mapCreated??false)).toBe(false);
-    await page.locator('.service-nav a[href="#filters"]').click();await page.clock.runFor(100);
-    expect(await page.evaluate(()=>(window as any).mapCreated)).toBe(true);
+    await page.locator('.service-nav a[href="#filters"]').click();await expect(page.locator('#map')).toBeVisible();
+    await expect.poll(async()=>{await page.clock.runFor(32);return page.evaluate(()=>(window as any).mapCreated);}).toBe(true);
   }finally{release();}
 });
 test('admins can delete another member post while other members cannot edit or delete it',async({page,browser})=>{
