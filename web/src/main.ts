@@ -8,6 +8,7 @@ import {initHelp} from './help';
 import {initLegal} from './legal';
 import {initAiQuota} from './ai-quota';
 import './theme.css';
+import './account.css';
 
 async function loadPromotions(){
   if(!db)return;

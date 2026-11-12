@@ -1,6 +1,7 @@
 import {appFetch,directionsUrl,manualFilter} from './bridge';
 import {hasMapCoordinates} from './naver';
 import {friendly} from './ui';
+import {activePreferenceFilter,preferencesLoading} from './preference-state';
 
   const el=id=>document.getElementById(id);
   function showDetail(node,value){
@@ -63,6 +64,11 @@ import {friendly} from './ui';
       el('results-grid').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'});
     });
   }
+  function recordRecommendation(){
+    if(!lastRecommendation)return;
+    const items=slots.filter(slot=>slot.data).map(slot=>({restaurantId:slot.data.get('음식점아이디'),menuId:slot.data.get('_menuId')||null}));
+    if(items.length)window.dispatchEvent(new CustomEvent('recommendation-shown',{detail:{eventId:crypto.randomUUID(),source:lastRecommendation.source==='chat'?'ai':'manual',filter:lastRecommendation.filter,items}}));
+  }
   function appendChat(role,text){
     if(role==='user')el('chat-quick').hidden=true;
     const message={role,text:text.slice(0,1000)};
@@ -80,7 +86,7 @@ import {friendly} from './ui';
     while(el('chat-log').children.length>8)el('chat-log').firstElementChild.remove();
     el('chat-log').scrollTop=el('chat-log').scrollHeight;
   }
-  function resultBusy(){return retrying||(activeSource==='manual'?picking:chatPicking);}
+  function resultBusy(){return preferencesLoading()||retrying||(activeSource==='manual'?picking:chatPicking);}
   function clearResults(source){
     lastRecommendation=null;retryController?.abort();retryController=null;retrying=false;
     el('result-retry').hidden=true;el('result-retry-status').textContent='';
@@ -156,8 +162,8 @@ const save=node.querySelector('.save-menu');save.hidden=!data.get('_menuId');sav
   function updatePickButton(){
     const visible=slots.filter(slot=>slot.data),shown=resultSource==='manual'?visible:[],locked=shown.filter(slot=>slot.locked).length;
     const chatShown=resultSource==='chat'?visible:[],chatLocked=chatShown.filter(slot=>slot.locked).length;
-    el('chat-send').disabled=chatPicking||retrying||!el('chat-input').value.trim();
-    el('chat-quick').querySelectorAll('button').forEach(button=>{button.disabled=chatPicking||retrying;});
+    el('chat-send').disabled=preferencesLoading()||chatPicking||retrying||!el('chat-input').value.trim();
+    el('chat-quick').querySelectorAll('button').forEach(button=>{button.disabled=preferencesLoading()||chatPicking||retrying;});
     el('chat-form').setAttribute('aria-busy',String(chatPicking));
     el('chat-conversation').dataset.busy=String(chatPicking);
     el('chat-refresh').hidden=!chatHistory.some(message=>message.role==='user');
@@ -170,14 +176,14 @@ const save=node.querySelector('.save-menu');save.hidden=!data.get('_menuId');sav
     el('result-retry').textContent=retrying?'재검색 중…':'같은 조건으로 재검색 ↻';
     if(multipleMode()){
       const allLocked=shown.length>0&&locked===shown.length;
-      el('pick').disabled=picking||retrying||!countReady||matched===0||locked===3
+      el('pick').disabled=preferencesLoading()||picking||retrying||!countReady||matched===0||locked===3
         ||(allLocked&&matched<=locked&&selectedClockVersion===clockVersion);
       el('pick').textContent=shown.length?'새로고침':'조건 검색';return;
     }
     const manualCurrent=resultSource==='manual'?current:null;
     const moreMenus=Number(manualCurrent?.get('_matchedMenuCount'))>1;
     const sameTime=selectedClockVersion===clockVersion;
-    el('pick').disabled=picking||retrying||matched===0||(matched===1&&manualCurrent!==null&&sameTime&&!moreMenus);
+    el('pick').disabled=preferencesLoading()||picking||retrying||!countReady||matched===0||(matched===1&&manualCurrent!==null&&sameTime&&!moreMenus);
     el('pick').textContent=manualCurrent===null?'오늘의 메뉴 뽑기':matched===1
       ?(!sameTime?'다시 추천받기':moreMenus?'다른 메뉴 뽑기':'추천 완료'):'다른 음식점 뽑기';
   }
@@ -290,6 +296,7 @@ const save=node.querySelector('.save-menu');save.hidden=!data.get('_menuId');sav
     if(query.has('min')&&query.has('max')&&Number(query.get('min'))>Number(query.get('max')))throw new Error('최소 가격이 최대 가격보다 큽니다.');
     if(el('category').value)query.set('category',el('category').value);
     if(el('form').value)query.set('form',el('form').value);
+    if(!el('manual-taste-row').hidden&&el('manual-taste').checked)query.set('taste','on');
     return query;
   }
   function changed(delay=0){
@@ -383,7 +390,7 @@ const save=node.querySelector('.save-menu');save.hidden=!data.get('_menuId');sav
       el('empty-pick').hidden=slots.some(slot=>slot.data);
       showPosition();
       showPickStatus();
-      if(matched>0)revealResults(display);
+      if(matched>0){revealResults(display);recordRecommendation();}
       if(matched===0)el('status').textContent='새로 추천할 음식점이 없습니다.';
     }catch(error){if(mine===version)el('status').textContent=friendly(error);}
     finally{
@@ -397,7 +404,7 @@ const save=node.querySelector('.save-menu');save.hidden=!data.get('_menuId');sav
     }
   };
   async function recommendChat(newMessage=false){
-    if(chatPicking||retrying||!chatHistory.some(message=>message.role==='user'))return;
+    if(preferencesLoading()||chatPicking||retrying||!chatHistory.some(message=>message.role==='user'))return;
     const mine=++chatVersion,display=++displayVersion,pickedClock=clockVersion;
     hideSuccessToast();
     activeSource='chat';chatPicking=true;
@@ -406,6 +413,7 @@ const save=node.querySelector('.save-menu');save.hidden=!data.get('_menuId');sav
     const useCurrent=resultSource==='chat',unlocked=useCurrent?slots.filter(slot=>!slot.locked):[...slots],locked=useCurrent?slots.filter(slot=>slot.locked):[];
     if(!unlocked.length){chatPicking=false;updatePickButton();return;}
     query.set('size',String(unlocked.length));query.set('history',JSON.stringify(chatHistory));
+    if(!el('chat-taste-row').hidden&&el('chat-taste').checked)query.set('taste','on');
     locked.forEach((slot,i)=>query.set('exclude'+i,slot.data.get('음식점아이디')));
     unlocked.forEach((slot,i)=>{if(useCurrent&&slot.data){query.set('prior'+i,slot.data.get('음식점아이디'));query.set('menu'+i,slot.data.get('_menuIndex'));}});
     const controller=new AbortController();chatController=controller;
@@ -425,7 +433,7 @@ const save=node.querySelector('.save-menu');save.hidden=!data.get('_menuId');sav
       unlocked.forEach((slot,i)=>{slot.data=data[i]||null;renderCard(slot);});
       lastRecommendation=batch.restaurants.length&&batch.filter?{source:'chat',filter:batch.filter,size:3,count:batch.count,clock:pickedClock}:null;
       el('empty-pick').hidden=slots.some(slot=>slot.data);showPosition();showPickStatus();
-      if(batch.restaurants.length>0)revealResults(display);
+      if(batch.restaurants.length>0){revealResults(display);recordRecommendation();}
     }catch(error){
       if(mine===chatVersion&&!controller.signal.aborted)el('chat-status').textContent=friendly(error);
     }finally{
@@ -451,11 +459,11 @@ const save=node.querySelector('.save-menu');save.hidden=!data.get('_menuId');sav
       }else{chatMatched=batch.count;chatReady=true;chatClock=saved.clock;el('chat-count').textContent='채팅에 맞는 가게 '+batch.count.toLocaleString('ko-KR')+'곳';}
       el('empty-pick').hidden=slots.some(slot=>slot.data);showPosition();showPickStatus();
       el('result-retry-status').textContent=slots.some(slot=>slot.data)?'':'조건에 맞는 음식점이 없습니다.';
-      if(slots.some(slot=>slot.data))revealResults(display);
+      if(slots.some(slot=>slot.data)){revealResults(display);recordRecommendation();}
     }catch(error){if(controller===retryController&&!controller.signal.aborted)el('result-retry-status').textContent=friendly(error);}
     finally{if(controller===retryController){retrying=false;retryController=null;updatePickButton();}}
   };
-  el('chat-input').addEventListener('input',()=>{el('chat-send').disabled=chatPicking||retrying||!el('chat-input').value.trim();});
+  el('chat-input').addEventListener('input',()=>{el('chat-send').disabled=preferencesLoading()||chatPicking||retrying||!el('chat-input').value.trim();});
   el('chat-input').addEventListener('keydown',event=>{
     if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing&&event.keyCode!==229){event.preventDefault();if(!el('chat-send').disabled)el('chat-form').requestSubmit();}
   });
@@ -473,6 +481,19 @@ const save=node.querySelector('.save-menu');save.hidden=!data.get('_menuId');sav
     if(activeSource==='chat'){displayVersion++;activeSource='manual';}
     if(resultSource==='chat')clearResults('manual');updatePickButton();
   };
+  function syncTaste(){
+    const prefs=activePreferenceFilter();
+    for(const key of ['min','max'])if(el(key).dataset.fromTaste==='true'){el(key).value='';delete el(key).dataset.fromTaste;}
+    if(el('manual-taste').checked&&!el('manual-taste-row').hidden&&!el('min').value&&!el('max').value){
+      for(const key of ['min','max'])if(typeof prefs[key]==='number'){el(key).value=String(prefs[key]);el(key).dataset.fromTaste='true';}
+    }
+    if(!el('date').value)setNow();changed();
+  }
+  el('manual-taste').addEventListener('change',syncTaste);
+  for(const key of ['min','max'])el(key).addEventListener('input',()=>delete el(key).dataset.fromTaste);
+  window.addEventListener('food-preferences-changed',syncTaste);
+  window.addEventListener('food-preferences-loading',updatePickButton);
+  if(!el('manual-taste-row').hidden&&!preferencesLoading())syncTaste();
   getText('/api/count?time=all').then(text=>{
     total=Number(text);
     if(!Number.isInteger(total)||total<1)throw new Error('추첨할 음식점이 없습니다.');

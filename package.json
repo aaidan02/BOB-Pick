@@ -11,10 +11,10 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "preview:ui": "node scripts/preview-ui.mjs",
-    "test": "node --import tsx --test tests/cloud.test.ts tests/naver.test.ts",
+    "test": "node --import tsx --test --test-concurrency=1 tests/cloud.test.ts tests/naver.test.ts tests/account-ai.test.ts",
     "test:browser": "playwright test",
     "data:export": "python3 scripts/export_cloud.py",
-    "check:edge": "deno check --node-modules-dir=manual supabase/functions/ai-recommend/index.ts"
+    "check:edge": "deno check --node-modules-dir=manual supabase/functions/ai-recommend/index.ts supabase/functions/delete-account/index.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.119.0"

@@ -1,3 +1,5 @@
+import {accountMarkup,initAccount,loadAccountOverview} from './account';
+import {supportMarkup,initSupport,loadSupport,loadAdminSupport} from './support';
 import {initAuth,user,admin} from './auth';
 import {initCommunity,loadPosts} from './community';
 import {initFavorites,loadFavorites} from './favorites';
@@ -17,18 +19,15 @@ export async function initPortal(){
       <form id="auth-form" class="portal-form">
         <label id="auth-email-row">이메일<input id="auth-email" type="email" autocomplete="email" required maxlength="254" placeholder="이메일 주소"></label>
         <label id="auth-password-row">비밀번호<input id="auth-password" type="password" autocomplete="current-password" minlength="8" maxlength="128" required placeholder="8자 이상 입력해 주세요"></label>
+        <label id="auth-password-confirm-row" hidden>비밀번호 확인<input id="auth-password-confirm" type="password" autocomplete="new-password" minlength="8" maxlength="128" disabled></label>
         <label id="auth-nickname-row" hidden>닉네임<input id="auth-nickname" autocomplete="nickname" minlength="2" maxlength="40" placeholder="동네에서 사용할 이름"></label>
+        <details id="signup-taste" class="signup-taste" hidden><summary>음식 취향 설정 <span class="helper">선택</span></summary><fieldset id="signup-taste-fields" disabled><legend class="sr-only">가입 시 음식 취향</legend><div id="signup-taste-content"></div></fieldset></details>
         <button id="auth-submit" type="submit">로그인</button>
       </form><button type="button" data-auth-mode="reset" class="text-button">비밀번호를 잊으셨나요?</button><p id="auth-status" class="form-status" role="status"></p>
     </div>
-    <div id="member-box" hidden>
-      <div class="surface"><div class="member-heading"><span class="member-avatar" aria-hidden="true">밥</span><div><p class="helper">오늘도 맛있는 하루 보내세요</p><h2 id="member-name"></h2></div></div>
-        <div class="account-links"><a href="#favorites"><span>♡ 내 찜 목록</span><span aria-hidden="true">›</span></a><a href="#requests"><span>문의·신청 내역</span><span aria-hidden="true">›</span></a></div>
-        <form id="profile-form" class="portal-form"><label>내 닉네임<input id="profile-nickname" minlength="2" maxlength="40" required></label><button id="profile-save" class="secondary">닉네임 저장</button></form>
-        <button id="logout" type="button" class="text-button">로그아웃</button><p id="member-status" class="form-status" role="status"></p>
-      </div>
-    </div>
+    <div id="member-box" hidden>${accountMarkup()}</div>
   </section>
+  <section id="support-panel" class="service-panel" hidden aria-labelledby="support-heading">${supportMarkup()}</section>
   <section id="favorites-panel" class="service-panel" hidden aria-labelledby="favorites-heading">
     <div class="page-heading"><p class="section-eyebrow">다음에 또 먹고 싶은</p><h1 id="favorites-heading">내 찜 목록</h1><p>마음에 드는 메뉴를 모아두고 다시 찾아보세요.</p></div>
     <div class="surface"><p id="favorite-status" class="empty-state" role="status"></p><div id="favorite-list" class="portal-grid"></div><button id="favorite-more" type="button" class="secondary" hidden>찜한 메뉴 더 보기</button><a class="inline-link" href="#filters">메뉴 찾으러 가기 →</a></div>
@@ -43,7 +42,7 @@ export async function initPortal(){
     </div>
   </section>
   <section id="requests-panel" class="service-panel" hidden aria-labelledby="requests-heading">
-    <div class="page-heading"><p class="section-eyebrow">함께 만드는 밥픽</p><h1 id="requests-heading">무엇을 도와드릴까요?</h1><p>가게 정보 수정, 새 음식점 등록, 홍보를 신청해요.</p></div>
+    <div class="page-heading"><p class="section-eyebrow">함께 만드는 밥픽</p><h1 id="requests-heading">무엇을 도와드릴까요?</h1><p>가게 정보 수정, 새 음식점 등록, 홍보를 신청해요. <a href="#support">사이트·계정 문의는 고객센터 →</a></p></div>
     <p id="request-login" class="surface empty-state">로그인하면 문의와 신청을 남길 수 있어요. <a class="inline-link" href="#account">로그인하기 →</a></p>
     <div class="request-layout">
     <form id="request-form" class="portal-form surface" hidden>
@@ -88,20 +87,22 @@ export async function initPortal(){
       </section>
       <section class="surface"><div class="section-head"><h2>승인 대기 <span id="admin-pending-count" class="status-badge">0</span></h2></div><div id="admin-pending"></div></section>
       <section class="surface"><h2>처리 내역</h2><div id="admin-reviews"></div></section>
+      <section class="surface"><div class="section-head"><h2>고객센터 문의</h2><button id="admin-support-reload" type="button" class="secondary">새로고침</button></div><p id="admin-support-status" class="form-status" role="status"></p><div id="admin-support-list"></div></section>
       <details class="surface audit-section"><summary>변경 이력 보기</summary><div id="admin-logs"></div></details>
     </div>
   </section>`;
   el('account-art').prepend(document.querySelector('.hero-art')!.cloneNode(true));
+  initAccount();initSupport();
   initCommunity();initFavorites();initRequests();initAdminAccounts();
   function route(){
     const page=location.hash.slice(1);
     if(isLegalPage(page)){showLegalPage(page);return;}
     el('legal-view').hidden=true;
-    const service=['account','favorites','community','requests','admin'].includes(page);
+    const service=['account','favorites','community','requests','admin','support'].includes(page);
     const returningHome=el('home-view').hidden&&!service;
     el('home-view').hidden=service;el('service-view').hidden=!service;
     document.querySelectorAll<HTMLElement>('.service-panel').forEach(panel=>panel.hidden=panel.id!==page+'-panel');
-    if(page==='community')void loadPosts();if(page==='favorites')void loadFavorites();if(page==='requests')void loadRequests();if(page==='admin')void loadAdmin();
+    if(page==='community')void loadPosts();if(page==='favorites')void loadFavorites();if(page==='requests')void loadRequests();if(page==='admin'){void loadAdmin();void loadAdminSupport();}if(page==='support')void loadSupport();if(page==='account')void loadAccountOverview();
     if(service)el('service-view').scrollIntoView({block:'start'});
     if(returningHome)requestAnimationFrame(()=>{
       if(el('home-view').hidden||location.hash.slice(1)!==page)return;
@@ -111,14 +112,14 @@ export async function initPortal(){
       const active=link.hash===location.hash||(!service&&link.hash==='#filters');
       if(active)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');
     });
-    const titles:Record<string,string>={account:'나의 밥픽',favorites:'내 찜 목록',community:'동네 이야기',requests:'문의·신청',admin:'관리자'};
+    const titles:Record<string,string>={account:'나의 밥픽',favorites:'내 찜 목록',community:'동네 이야기',requests:'문의·신청',admin:'관리자',support:'고객센터'};
     document.title=service?titles[page]+' · 밥픽':'밥픽 · 오늘은 뭘 먹을까요?';
   }
   window.addEventListener('hashchange',route);
   window.addEventListener('identity-changed',()=>{
     el('request-login').hidden=!!user;el('request-form').hidden=!user;
     el('request-reload').hidden=!user;el('admin-content').hidden=!admin;
-    if(location.hash==='#admin')void loadAdmin();
+    if(location.hash==='#admin'){void loadAdmin();void loadAdminSupport();}
   });
   route();await initAuth();
 }

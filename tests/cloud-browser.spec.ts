@@ -62,6 +62,12 @@ async function login(page:any,email='a@example.test'){
   const signed=page.waitForResponse((r:any)=>r.url().includes('/auth/v1/token'));
   await page.locator('#auth-submit').click();await expect(page.locator('#member-box')).toBeVisible();return (await (await signed).json()).access_token;
 }
+async function signupMember(page:any,email:string,configure?:()=>Promise<void>){
+  await page.goto('/#account');await page.locator('[data-auth-mode="signup"]').click();
+  await page.locator('#auth-email').fill(email);await page.locator('#auth-password').fill('test-password');await page.locator('#auth-password-confirm').fill('test-password');await page.locator('#auth-nickname').fill('새로운 밥친구');
+  if(configure)await configure();
+  await page.locator('#auth-submit').click();await expect(page.locator('#member-box')).toBeVisible();await expect(page.locator('#member-email')).toHaveText(email);await expect(page.locator('#manual-taste-row')).not.toHaveAttribute('hidden');
+}
 async function expectResultsRevealed(page:any){
   // Verify the information the visitor needs, including after layout changes.
   await expect(page.locator('#menu')).toBeInViewport({ratio:1});
@@ -400,4 +406,77 @@ test('admins manage accounts while a pinned master cannot be revoked by self or 
     for(const token of [staffToken,memberToken]){const result=await call(token,'admin_set_membership',{p_user_id:staffId,p_enabled:true});if(result.ok())break;}
     await call(staffToken,'admin_set_membership',{p_user_id:memberId,p_enabled:false});await context.close();
   }
+});
+
+test('optional signup preferences persist, like/avoid are exclusive and manual search uses soft likes with hard exclusions',async({page})=>{
+  await signupMember(page,'taste-new@example.test',async()=>{
+    await page.locator('#signup-taste summary').click();
+    const korean=page.locator('#signup-taste-categories .taste-row').filter({hasText:'한식'});
+    await korean.getByRole('button',{name:/좋아요/}).click();await korean.getByRole('button',{name:/피할래요/}).click();await expect(korean.getByRole('button',{name:/좋아요/})).toHaveAttribute('aria-pressed','false');
+    await korean.getByRole('button',{name:/좋아요/}).click();await page.locator('#signup-taste-categories .taste-row').filter({hasText:'중식'}).getByRole('button',{name:/피할래요/}).click();
+    await page.locator('#signup-taste-forms').getByRole('button',{name:'밥',exact:true}).click();await page.locator('#signup-taste-menus').getByRole('button',{name:'짜장면',exact:true}).click();
+    await page.locator('#signup-taste-min').fill('5000');await page.locator('#signup-taste-max').fill('10000');await page.locator('#signup-taste-days').getByRole('button',{name:'14일',exact:true}).click();
+  });
+  await page.getByRole('tab',{name:'내 취향',exact:true}).click();
+  await expect(page.locator('#member-taste-categories .taste-row').filter({hasText:'한식'}).getByRole('button',{name:/좋아요/})).toHaveAttribute('aria-pressed','true');
+  await expect(page.locator('#member-taste-categories .taste-row').filter({hasText:'중식'}).getByRole('button',{name:/피할래요/})).toHaveAttribute('aria-pressed','true');await expect(page.locator('#member-taste-min')).toHaveValue('5000');
+  await page.reload();await page.getByRole('tab',{name:'내 취향',exact:true}).click();await expect(page.locator('#member-taste-max')).toHaveValue('10000');await expect(page.locator('#member-taste-days').getByRole('button',{name:'14일',exact:true})).toHaveAttribute('aria-pressed','true');
+  await page.locator('.service-nav a[href="#filters"]').click();await page.locator('#filter-details summary').click();await expect(page.locator('#min')).toHaveValue('5000');await page.locator('#time-enabled').uncheck();await expect(page.locator('#pick')).toBeEnabled();
+  const searching=page.waitForRequest(r=>r.url().endsWith('/rpc/pick_restaurants'));await page.locator('#pick').click();const filter=(await searching).postDataJSON().p_filter;
+  expect(filter.preferredCategories).toEqual(['한식']);expect(filter.excludedCategories).toEqual(['중식']);expect(filter.excludedTerms).toEqual(['짜장면']);expect(filter.min).toBe(5000);expect(filter.max).toBe(10000);
+  await expect(page.locator('.restaurant-card:visible')).toHaveCount(3);
+});
+
+test('history records shown recommendations, marks real visits, excludes them on later searches and stays account-private',async({page})=>{
+  await signupMember(page,'history-new@example.test');await page.locator('.service-nav a[href="#filters"]').click();await page.locator('#filter-details summary').click();await page.locator('#time-enabled').uncheck();await expect(page.locator('#pick')).toBeEnabled();
+  const stored=page.waitForResponse(r=>r.url().endsWith('/rpc/save_recommendation_history'));await page.locator('#pick').click();await expect(page.locator('.restaurant-card:visible')).toHaveCount(1);const restaurant=await page.locator('#result').getAttribute('data-restaurant-id');await stored;
+  await page.locator('.service-nav a[href="#account"]').click();await page.getByRole('tab',{name:'추천·방문 기록'}).click();await expect(page.locator('#history-list .history-card')).toHaveCount(1);
+  const visit=page.locator('#history-list').getByRole('button',{name:'다녀왔어요',exact:true});await visit.click();await expect(page.locator('#history-list button[aria-pressed=true]')).toHaveText('✓ 다녀왔어요');
+  await page.locator('.service-nav a[href="#filters"]').click();await expect(page.locator('#pick')).toBeEnabled();const next=page.waitForRequest(r=>r.url().endsWith('/rpc/pick_restaurants'));await page.locator('#pick').click();expect((await next).postDataJSON().p_filter.excludedRestaurantIds).toContain(restaurant);
+  await page.locator('.service-nav a[href="#account"]').click();await page.locator('#logout').click();await signupMember(page,'history-other@example.test');await page.getByRole('tab',{name:'추천·방문 기록'}).click();await expect(page.locator('#history-status')).toContainText('아직 기록이 없어요');await expect(page.locator('#history-list .history-card')).toHaveCount(0);
+});
+
+test('my information changes the password only after matching confirmation and reauthentication',async({page})=>{
+  const email='password-new@example.test';await signupMember(page,email);await page.locator('.account-details > summary').filter({hasText:'비밀번호 변경'}).click();
+  await page.locator('#password-current').fill('wrong-password');await page.locator('#password-new').fill('new-secure-password');await page.locator('#password-confirm').fill('mismatched-password');await page.locator('#password-save').click();await expect(page.locator('#password-status')).toHaveText('새 비밀번호가 일치하지 않습니다.');
+  await page.locator('#password-confirm').fill('new-secure-password');await page.locator('#password-save').click();await expect(page.locator('#password-status')).toHaveText('현재 비밀번호를 확인해 주세요.');
+  await page.locator('#password-current').fill('test-password');await page.locator('#password-save').click();await expect(page.locator('#password-status')).toHaveText('비밀번호를 변경했습니다.');
+  await page.locator('#logout').click();await page.locator('#auth-email').fill(email);await page.locator('#auth-password').fill('test-password');await page.locator('#auth-submit').click();await expect(page.locator('#auth-status')).toHaveText('이메일과 비밀번호를 확인해 주세요.');
+  await page.locator('#auth-password').fill('new-secure-password');await page.locator('#auth-submit').click();await expect(page.locator('#member-box')).toBeVisible();
+});
+
+test('customer center accepts private inquiries and the owner sees an administrator reply',async({page,browser})=>{
+  await signupMember(page,'support-new@example.test');await page.locator('.site-footer a[href="#support"]').click();
+  await page.locator('#support-category').selectOption('bug');await page.locator('#support-subject').fill('고객센터 답변 테스트');await page.locator('#support-body').fill('<img src=x onerror=alert(1)> 추천 화면 문의');await page.locator('#support-submit').click();await expect(page.locator('#support-status')).toContainText('문의를 접수했습니다.');
+  const context=await browser.newContext(),staff=await context.newPage();
+  try{
+    await staff.route('https://oapi.map.naver.com/**',r=>r.abort());await login(staff,'admin@example.test');await staff.locator('#admin-link').click();
+    const ticket=staff.locator('#admin-support-list .support-card').filter({hasText:'고객센터 답변 테스트'});await ticket.locator('summary').click();await ticket.getByRole('textbox',{name:'고객센터 답변'}).fill('오류를 확인하고 수정했습니다.');await ticket.getByRole('button',{name:'답변 보내기'}).click();await expect(staff.locator('#admin-support-status')).toHaveText('답변을 저장했습니다.');
+    await page.locator('#support-reload').click();const own=page.locator('#support-list .support-card').filter({hasText:'고객센터 답변 테스트'});await expect(own).toContainText('답변 완료');await own.locator('summary').click();await expect(own.locator('.support-reply')).toContainText('오류를 확인하고 수정했습니다.');await expect(own.locator('img')).toHaveCount(0);
+  }finally{await context.close();}
+});
+
+test('AI failures and invalid input do not consume usage, while 몰라 아무거나 produces a charged successful result',async({page})=>{
+  await signupMember(page,'ai-success-new@example.test');await page.locator('.service-nav a[href="#filters"]').click();await expect(page.locator('#ai-quota')).toHaveText('오늘 남은 AI 추천 20/20회');
+  for(const text of ['ㅋㅋㅋㅋ','오늘 날씨 알려줘','존재하지않는메뉴 먹고싶어','테스트 오류 국밥']){
+    await page.locator('#chat-reset').click();await page.locator('#chat-input').fill(text);const completed=page.waitForResponse(r=>r.url().includes('/functions/v1/ai-recommend'));await page.locator('#chat-send').click();await completed;await expect(page.locator('#chat-status')).not.toHaveText('원하는 메뉴를 찾고 있어요.');await expect(page.locator('#ai-quota')).toHaveText('오늘 남은 AI 추천 20/20회');
+  }
+  await page.locator('#chat-reset').click();await page.locator('#chat-input').fill('몰라 아무거나');await page.locator('#chat-send').click();await expect(page.locator('.restaurant-card:visible')).toHaveCount(3);await expect(page.locator('#ai-quota')).toHaveText('오늘 남은 AI 추천 19/20회');await expect(page.locator('#success-toast')).toBeVisible();
+});
+
+test('withdrawal requires the current password; deleted accounts cannot log in and the master stays protected',async({page})=>{
+  const email='withdraw-new@example.test';await signupMember(page,email);await page.locator('.account-danger > summary').click();await expect(page.locator('#account-delete-form')).toBeVisible();await page.locator('#account-delete-password').fill('wrong-password');await page.locator('#account-delete-confirm').check();await page.locator('#account-delete').click();await expect(page.locator('#account-delete-status')).toHaveText('현재 비밀번호를 확인해 주세요.');await expect(page.locator('#member-box')).toBeVisible();
+  await page.locator('#account-delete-password').fill('test-password');await page.locator('#account-delete').click();await expect(page.locator('#auth-box')).toBeVisible();await expect(page.locator('#auth-status')).toHaveText('회원 탈퇴가 완료되었습니다.');
+  await page.locator('#auth-email').fill(email);await page.locator('#auth-password').fill('test-password');await page.locator('#auth-submit').click();await expect(page.locator('#auth-status')).toHaveText('이메일과 비밀번호를 확인해 주세요.');
+  await login(page,'master@example.test');await page.locator('.account-danger > summary').click();await expect(page.locator('#account-delete-reason')).toHaveText('마스터 계정은 탈퇴할 수 없습니다.');await expect(page.locator('#account-delete-form')).toBeHidden();
+});
+
+test('account preferences, history and customer center fit mobile screens and preserve keyboard navigation',async({page})=>{
+  await signupMember(page,'mobile-settings@example.test');
+  for(const width of [390,320]){
+    await page.setViewportSize({width,height:844});
+    for(const name of ['내 정보','내 취향','추천·방문 기록']){await page.getByRole('tab',{name,exact:true}).click();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);if(width===390)await page.screenshot({path:'build/account-'+name+'-mobile.png',fullPage:true});}
+    await page.locator('.site-footer a[href="#support"]').click();await expect(page.locator('#support-panel')).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.locator('.service-nav a[href="#account"]').click();
+  }
+  await page.getByRole('tab',{name:'내 정보',exact:true}).focus();await page.keyboard.press('ArrowRight');await expect(page.getByRole('tab',{name:'내 취향',exact:true})).toHaveAttribute('aria-selected','true');
 });

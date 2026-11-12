@@ -1,6 +1,8 @@
 import {client,rpc} from './supabase';
 import {friendly} from './ui';
 import {legacyRecommendation,type Candidate} from '../../supabase/functions/_shared/recommendation';
+import {applyPreferenceFilter} from '../../supabase/functions/_shared/preferences';
+import {activePreferenceFilter,preferencesFailed} from './preference-state';
 export {directionsUrl} from './naver';
 
 export function manualFilter(q:URLSearchParams){
@@ -10,6 +12,11 @@ export function manualFilter(q:URLSearchParams){
   }
   if(filter.min!=null&&filter.max!=null&&Number(filter.min)>Number(filter.max))throw Error('최소·최대 가격을 확인해 주세요.');
   if(q.get('date'))filter.date=q.get('date');if(q.get('time')&&q.get('time')!=='all')filter.time=q.get('time');
+  if(q.get('taste')==='on'){
+    if(preferencesFailed())throw Error('취향을 불러오지 못했어요. 다시 로그인하거나 내 취향 반영을 해제해 주세요.');
+    const preferences=activePreferenceFilter();delete preferences.min;delete preferences.max;
+    return applyPreferenceFilter(filter,preferences);
+  }
   return filter;
 }
 export function batchState(q:URLSearchParams){
@@ -28,7 +35,7 @@ export async function appFetch(url:string,options:RequestInit={}):Promise<Respon
       const q=new URLSearchParams(String(options.body??'')),{locked,prior}=batchState(q);
       const {data:{session}}=await client().auth.getSession();if(!session)return new Response('AI 추천은 로그인 후 사용할 수 있습니다.',{status:401});
       try{
-        const response=await fetch(import.meta.env.VITE_SUPABASE_URL+'/functions/v1/ai-recommend',{method:'POST',headers:{'Content-Type':'application/json',apikey:import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,Authorization:'Bearer '+session.access_token},body:JSON.stringify({history:JSON.parse(q.get('history')??'[]'),size:Number(q.get('size')??3),locked,prior}),signal});
+        const response=await fetch(import.meta.env.VITE_SUPABASE_URL+'/functions/v1/ai-recommend',{method:'POST',headers:{'Content-Type':'application/json',apikey:import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,Authorization:'Bearer '+session.access_token},body:JSON.stringify({history:JSON.parse(q.get('history')??'[]'),size:Number(q.get('size')??3),locked,prior,usePreferences:q.get('taste')==='on'}),signal});
         const data=await response.json();return new Response(response.ok?JSON.stringify(data):friendly(data.error??'AI 추천에 실패했습니다.'),{status:response.status,headers:{'Content-Type':response.ok?'application/json':'text/plain'}});
       }finally{window.dispatchEvent(new Event('ai-usage-changed'));}
     }

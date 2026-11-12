@@ -1,6 +1,6 @@
 # Supabase + Vercel 배포
 
-운영 주소는 **https://bob-pick.vercel.app**, Vercel 프로젝트는 `aaidan02/bob-pick`입니다. Supabase 초기 데이터·마이그레이션 8개·AI 함수가 적용되어 있습니다. 소스는 `feat/supabase-vercel-service` 브랜치이며 [PR #1](https://github.com/aaidan02/BOB-Pick/pull/1)에서 확인할 수 있습니다.
+운영 주소는 **https://bob-pick.vercel.app**, Vercel 프로젝트는 `aaidan02/bob-pick`입니다. Supabase 초기 데이터와 회원·취향·기록·고객센터 스키마는 마이그레이션으로 관리합니다. 소스는 `feat/supabase-vercel-service` 브랜치이며 [PR #1](https://github.com/aaidan02/BOB-Pick/pull/1)에서 확인할 수 있습니다.
 
 ## 화면과 로컬 시안
 
@@ -10,7 +10,7 @@
 
 ## 데이터 관계
 
-공통 회원키는 Supabase Auth의 `auth.users.id`(UUID)입니다. `profiles.id`, `favorites.user_id`, `posts.user_id`, `requests.user_id`, `request_reviews.reviewer_id`, `change_logs.actor_id`가 같은 회원키를 참조합니다. 활동에는 자체 ID도 있어 한 회원이 여러 건을 작성할 수 있습니다.
+공통 회원키는 Supabase Auth의 `auth.users.id`(UUID)입니다. `profiles.id`, `food_preferences.user_id`, `recommendation_history.user_id`, `support_tickets.user_id`, `favorites.user_id`, `posts.user_id`, `requests.user_id`, `request_reviews.reviewer_id`, `change_logs.actor_id`가 같은 회원키를 참조합니다. 활동에는 자체 ID도 있어 한 회원이 여러 건을 작성할 수 있습니다.
 
 ```mermaid
 erDiagram
@@ -44,9 +44,10 @@ supabase db push --remote --yes
 
 ```sh
 supabase functions deploy ai-recommend --no-verify-jwt
+supabase functions deploy delete-account --no-verify-jwt
 ```
 
-함수는 본문에서 Auth 서버의 `getUser(token)`으로 사용자 토큰을 검증합니다. 사용자 토큰으로 DB에 접근해 RLS를 유지하고 service-role 키를 사용하지 않습니다. 이 때문에 legacy JWT 게이트 대신 `verify_jwt=false`를 사용합니다.
+두 함수는 본문에서 Auth 서버의 `getUser(token)`으로 사용자 토큰을 검증하므로 legacy JWT 게이트 대신 `verify_jwt=false`를 사용합니다. 음식점 조회·취향·사용 예약에는 검증한 사용자 토큰을 사용해 RLS를 유지합니다. AI 성공 정산과 본인 탈퇴에는 Edge 런타임의 기본 `SUPABASE_SERVICE_ROLE_KEY`를 서버 안에서만 사용하며, 이 키를 브라우저 설정이나 저장소에 넣지 않습니다.
 
 **Edge Functions → Secrets**:
 
@@ -101,9 +102,21 @@ on conflict(user_id) do nothing;
 
 ## AI 횟수와 재검색
 
-`ai_quota_status()`는 호출자 본인의 한국 날짜 기준 사용량·잔여량·다음 초기화 시각만 읽으며 횟수를 차감하지 않습니다. 비로그인 실행 권한과 `private.ai_usage` 직접 접근은 차단합니다. `consume_ai_quota()`는 DB의 현재 관리자 여부를 확인해 관리자·마스터는 무제한으로 처리하고 일반 회원에게 하루 20회 제한을 적용합니다. 관리자 해제 후 기존 토큰에도 일반 회원 제한이 적용됩니다. 화면의 횟수는 로그인 변경·AI 요청 종료·창 재활성화와 한국 자정에 새로 확인합니다.
+`ai_quota_status()`는 호출자 본인의 한국 날짜 기준 사용량·잔여량·다음 초기화 시각만 읽으며 횟수를 차감하지 않습니다. 새 AI 요청은 `begin_ai_request()`로 3분짜리 예약을 만들고, 실제 후보·메뉴 검증이 완료된 경우에만 서버 전용 `complete_ai_request()`가 1회를 정산합니다. 오류·확인 질문·후보 없음·취소는 성공 사용량에 넣지 않습니다. 정산 응답이 유실되면 서버가 한 번만 보상할 수 있고 브라우저는 정산·보상 API를 실행할 수 없습니다. 예전 `consume_ai_quota()`는 호환용으로 남지만 운영 AI 함수는 호출하지 않습니다. 기존 집계는 어떤 실패 요청 때문인지 구분할 수 없어 소급 변경하지 않습니다.
+
+일반 회원은 하루 20회, 동시에 진행 중인 예약은 최대 3개이며 짧은 시간의 반복 요청도 제한합니다. 사용량과 진행 예약을 함께 잠가 동시 요청이 잔여 횟수를 초과하지 못하게 합니다. 관리자·마스터는 일일·동시·반복 횟수 제한에서 제외하며, DB의 현재 권한으로 판단합니다. 화면의 횟수는 로그인 변경·AI 요청 종료·창 재활성화와 한국 자정에 새로 확인합니다. ‘몰라 아무거나’는 실제 후보를 이용한 랜덤 추천으로 처리하고, 무의미한 문자열·음식과 무관한 질문은 추천을 만들지 않습니다.
 
 수동 검색은 제출 시각을, AI는 서버가 해석한 정규화 조건을 결과와 함께 보관합니다. 공통 재검색 버튼은 이 조건을 `pick_restaurants`에 재사용하고 고정한 가게를 제외한 나머지만 다시 고릅니다. 입력창의 새 값이나 현재 시각으로 기존 결과의 기준을 바꾸지 않으며, Gemini를 추가 호출하거나 AI 횟수를 차감하지 않습니다. AI 함수의 `filter` 응답과 횟수 RPC를 먼저 적용한 뒤 웹 화면을 배포합니다.
+
+## 내 정보·취향·기록·고객센터
+
+회원가입의 음식 취향은 선택 사항입니다. 이메일 확인 전 Auth 생성 트리거가 검증한 취향을 저장하므로 가입 직후 세션이 없어도 유지됩니다. 내 정보에서 음식 종류 좋아요/피할래요, 좋아하는 형태, 제외할 메뉴 단어, 예산, 최근 방문 제외 기간을 수정합니다. 좋아요는 후보를 제한하지 않고 우선순위만 높이며, 피할래요·메뉴 이름에 포함된 제외 단어는 필수 제외입니다. 수동 검색은 화면에 보이는 예산을 사용하고 AI의 명시적인 예산은 저장 예산보다 우선합니다. 두 검색 모두 ‘내 취향 반영’을 끌 수 있습니다. 도보 시간·이동 거리 계산은 포함하지 않습니다.
+
+로그인 상태에서 실제 보여준 추천을 음식점·메뉴 ID로 기록합니다. 스냅샷은 서버가 실제 데이터로 생성하며 계정 전환 중에는 예상 회원 ID가 일치하는 요청만 저장합니다. 본인만 조회·삭제하고 ‘다녀왔어요’를 변경할 수 있습니다. 0/7/14/30일 제외는 추천 횟수가 아닌 직접 표시한 방문 시각을 기준으로 합니다. 방문하지 않은 추천은 최근 100건까지 보관하며 방문 기록은 자동 삭제하지 않습니다.
+
+고객센터는 공개 FAQ와 회원별 비공개 1:1 문의로 나뉩니다. 본인과 관리자만 문의를 볼 수 있고 답변은 DB에서 현재 관리자 권한을 검사합니다. 문의 본문·답변을 HTML로 렌더링하지 않으며 변경 이력에는 본문을 복제하지 않습니다. 음식점 수정·등록·홍보는 기존 문의·신청 기능을 계속 사용합니다.
+
+비밀번호 변경은 현재 비밀번호 재인증과 새 비밀번호 일치 확인을 거칩니다. 탈퇴 함수는 검증된 JWT의 본인 ID만 받고 현재 비밀번호를 별도로 확인한 뒤 모든 갱신 세션을 종료하고 Auth 계정을 삭제합니다. 계정·취향·찜·추천 및 방문 기록·게시글·고객센터 문의는 삭제하고 음식점 신청의 회원 연결과 자유 입력 메시지는 제거합니다. 반영된 음식점과 익명 처리 이력은 유지합니다. 마스터와 마지막 관리자 탈퇴는 함수와 DB 트리거 양쪽에서 차단합니다. 탈퇴 테스트는 로컬 대역의 가짜 계정만 이용합니다.
 
 ## 네이버 지도
 
@@ -116,3 +129,7 @@ Naver Cloud Maps 애플리케이션의 Web 서비스 URL에 운영 origin을 추
 ## 검증 범위
 
 GitHub Actions는 웹 빌드·Edge 타입 검사·PostgreSQL/RLS·브라우저 테스트를 수행합니다. 로컬 대역 테스트와 실제 운영 메일·Gemini 모델 권한·지도 인증의 검증은 구분합니다. 실제 계정으로 가입·찜 재접속·신청·관리자 처리·AI 추천·휴대폰 접속을 확인합니다.
+
+2026-11-12 추가 검증은 PostgreSQL/RLS·추천·정산·탈퇴·길찾기 37개와 브라우저 27개를 통과했습니다. 브라우저의 새 AI·탈퇴 경로는 운영과 같은 공유 처리 함수를 호출하며 외부 Gemini와 Auth 전송만 로컬 대역으로 대체합니다. 운영에서는 마이그레이션 10개, AI v4·탈퇴 v1 배포와 음식점/메뉴 수, 정산의 서버 전용 권한, 취향·기록·답변의 직접 쓰기 차단을 별도로 확인합니다.
+
+Supabase 보안 점검의 [인증 사용자 definer 함수 안내](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable)는 본인·관리자 검사를 거치는 의도된 API입니다. [정책 없는 RLS](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy)는 private 내부 테이블의 직접 접근 차단이며, 새 인덱스의 [미사용 안내](https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index)는 아직 사용 이력이 없다는 의미입니다. 기존 Auth의 [유출 비밀번호 검사 설정 안내](https://supabase.com/docs/guides/database/database-linter?lint=auth_leaked_password_protection)는 이번 배포에서 변경하지 않습니다.

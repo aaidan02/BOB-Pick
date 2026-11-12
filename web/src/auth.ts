@@ -1,3 +1,4 @@
+import {readPreferenceForm,renderPreferenceForm} from './preference-form';
 import type {User} from '@supabase/supabase-js';
 import {client,db,rpc} from './supabase';
 import {action,el,input,message} from './ui';
@@ -15,8 +16,9 @@ export async function refreshIdentity(){
   }
   if(mine!==identityVersion)return;
   user=who;admin=isAdmin;
-  el('account-nav-label').textContent=user?'나의 밥픽':'로그인';el('admin-link').hidden=!admin;
-  el('auth-box').hidden=!!user&&!recovery;el('member-box').hidden=!user;
+  el('account-nav-label').textContent=user?'내 정보':'로그인';el('admin-link').hidden=!admin;
+  el('auth-box').hidden=!!user&&!recovery;el('member-box').hidden=!user||recovery;
+  el('account-heading').textContent=user?'내 정보':'반가워요, 밥친구!';
   if(user){
     el<HTMLInputElement>('profile-nickname').value=nickname;
     message('member-name',(nickname||'밥친구')+'님');
@@ -25,7 +27,11 @@ export async function refreshIdentity(){
 }
 function setMode(next:string){
   mode=next;recovery=next==='password';
-  el('auth-nickname-row').hidden=mode!=='signup';el('auth-password-row').hidden=mode==='reset';el('auth-email-row').hidden=mode==='password';
+  el('auth-nickname-row').hidden=mode!=='signup';
+  el('signup-taste').hidden=mode!=='signup';(el('signup-taste-fields') as HTMLFieldSetElement).disabled=mode!=='signup';
+  el('auth-password-confirm-row').hidden=!['signup','password'].includes(mode);
+  const confirm=el<HTMLInputElement>('auth-password-confirm');confirm.disabled=!['signup','password'].includes(mode);confirm.required=!confirm.disabled;
+  el<HTMLInputElement>('auth-nickname').disabled=mode!=='signup';el<HTMLInputElement>('auth-password').disabled=mode==='reset';el<HTMLInputElement>('auth-email').disabled=mode==='password';el('auth-password-row').hidden=mode==='reset';el('auth-email-row').hidden=mode==='password';
   el<HTMLInputElement>('auth-email').required=mode!=='password';el<HTMLInputElement>('auth-password').required=mode!=='reset';
   el<HTMLInputElement>('auth-nickname').required=mode==='signup';
   el('auth-submit').textContent=({login:'로그인',signup:'회원가입',reset:'재설정 메일 받기',password:'새 비밀번호 저장'} as Record<string,string>)[mode];
@@ -39,13 +45,15 @@ export async function initAuth(){
   el<HTMLFormElement>('auth-form').onsubmit=event=>{
     event.preventDefault();void action(el('auth-submit'),'auth-status',async()=>{
       const email=input('auth-email'),password=el<HTMLInputElement>('auth-password').value,redirectTo=location.origin+'/#account';
+      if(['signup','password'].includes(mode)&&password!==el<HTMLInputElement>('auth-password-confirm').value)throw Error('비밀번호가 일치하지 않습니다.');
       if(mode==='login'){
         const {error}=await client().auth.signInWithPassword({email,password});if(error)throw error;
         message('auth-status','로그인했습니다.');await refreshIdentity();
       }else if(mode==='signup'){
         const nickname=input('auth-nickname');if(nickname.length<2||nickname.length>40)throw Error('닉네임은 2~40자로 입력해 주세요.');
-        const {data,error}=await client().auth.signUp({email,password,options:{data:{nickname},emailRedirectTo:redirectTo}});if(error)throw error;
+        const {data,error}=await client().auth.signUp({email,password,options:{data:{nickname,food_preferences:readPreferenceForm('signup-taste')},emailRedirectTo:redirectTo}});if(error)throw error;
         message('auth-status',data.session?'회원가입했습니다.':'이메일로 보낸 가입 확인 링크를 눌러 주세요.');await refreshIdentity();
+        renderPreferenceForm('signup-taste');(el('signup-taste') as HTMLDetailsElement).open=false;
       }else if(mode==='reset'){
         const {error}=await client().auth.resetPasswordForEmail(email,{redirectTo:location.origin+'/?recovery=1#account'});if(error)throw error;
         message('auth-status','가입한 이메일이면 비밀번호 재설정 메일이 발송됩니다.');
@@ -53,7 +61,7 @@ export async function initAuth(){
         const {error}=await client().auth.updateUser({password});if(error)throw error;
         recovery=false;history.replaceState(null,'',location.pathname+'#account');setMode('login');await refreshIdentity();message('member-status','비밀번호를 변경했습니다.');
       }
-      el<HTMLInputElement>('auth-password').value='';
+      el<HTMLInputElement>('auth-password').value='';el<HTMLInputElement>('auth-password-confirm').value='';
     });
   };
   el<HTMLFormElement>('profile-form').onsubmit=event=>{
@@ -66,12 +74,17 @@ export async function initAuth(){
   };
   el<HTMLButtonElement>('logout').onclick=()=>void action(el('logout'),'member-status',async()=>{
     const {error}=await client().auth.signOut();if(error)throw error;
-    el<HTMLButtonElement>('chat-reset').click();await refreshIdentity();message('member-status','로그아웃했습니다.');
+    el<HTMLButtonElement>('chat-reset').click();setMode('login');await refreshIdentity();message('member-status','로그아웃했습니다.');
   });
+  setMode('login');
   if(!db){message('auth-status','Supabase 연결 설정이 필요합니다.');return;}
   db.auth.onAuthStateChange((event,session)=>{
-    user=session?.user??null;
-    if(!user){identityVersion++;admin=false;el('admin-link').hidden=true;el('admin-content').hidden=true;window.dispatchEvent(new Event('identity-changed'));}
+    const previous=user?.id;user=session?.user??null;
+    if(!user||previous!==user.id){identityVersion++;admin=false;el('admin-link').hidden=true;el('admin-content').hidden=true;window.dispatchEvent(new Event('identity-changed'));}
+    if(event==='SIGNED_OUT'){
+      setMode('login');for(const id of ['auth-email','auth-password','auth-password-confirm','auth-nickname'])el<HTMLInputElement>(id).value='';
+      renderPreferenceForm('signup-taste');(el('signup-taste') as HTMLDetailsElement).open=false;
+    }
     if(event==='PASSWORD_RECOVERY'){setMode('password');location.hash='account';}
     // Avoid awaiting another Auth call inside the Auth callback's lock.
     setTimeout(()=>void refreshIdentity().catch(()=>message('auth-status','로그인 연결을 확인해 주세요.')),0);

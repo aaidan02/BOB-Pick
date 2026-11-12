@@ -37,8 +37,8 @@ export function validateSelection(value:unknown,pool:Candidate[],wanted:number,p
     return {...candidate,selected:selected??null};
   });
 }
-export function planFilter(value:Record<string,unknown>,categories:string[],forms:string[]){
-  const filter:Record<string,unknown>={...seoulNow(),checkHours:value.allHours!==true};
+export function planFilter(value:Record<string,unknown>,categories:string[],forms:string[],clock=seoulNow()){
+  const filter:Record<string,unknown>={...clock,checkHours:value.allHours!==true};
   for(const [source,target,options] of [['categories','categories',categories],['excludedCategories','excludedCategories',categories],['forms','forms',forms],['excludedForms','excludedForms',forms]] as const){
     const values=value[source];
     if(!Array.isArray(values)||values.length>30||values.some(v=>typeof v!=='string'||!options.includes(v)))throw Error('AI 검색 조건을 확인하지 못했습니다. 다시 시도해 주세요.');

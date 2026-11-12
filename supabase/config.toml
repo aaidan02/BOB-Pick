@@ -17,3 +17,6 @@ minimum_password_length = 8
 [functions.ai-recommend]
 # New publishable keys are not JWTs; the handler validates the user token itself.
 verify_jwt = false
+
+[functions.delete-account]
+verify_jwt = false

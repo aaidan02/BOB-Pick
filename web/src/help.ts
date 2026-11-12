@@ -1,7 +1,7 @@
 import {el} from './ui';
 
 const seenKey='bob-pick:help-seen:v1';
-const otherPages=new Set(['account','favorites','community','requests','admin','terms','privacy','sources']);
+const otherPages=new Set(['account','favorites','community','requests','admin','support','terms','privacy','sources']);
 
 export function initHelp(){
   const container=el('site-help-container'),button=el<HTMLButtonElement>('site-help-toggle');
