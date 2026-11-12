@@ -126,9 +126,9 @@ on conflict(user_id) do nothing;
 
 자동 파기 함수는 공개 API가 아니고 anon·authenticated·service-role의 직접 실행을 차단합니다. DB 소유자 역할의 Cron만 실행하며 API 비밀 키를 Cron에 저장하지 않습니다. 실제 회원을 테스트로 탈퇴·삭제하지 않습니다. 로컬 테스트 DB는 Auth와 세션 테이블, RLS 및 같은 상태 변경 함수를 사용합니다. 실제 이메일 전달과 외부 Auth 전송 자체는 로컬 대역의 검증 범위 밖입니다.
 
-## 네이버 지도
-+공개 게시글·프로필의 RLS는 `account_content_visible(UUID)`로 공개 가능 여부만 확인합니다. 이 함수는 이메일·탈퇴 시각·회원 정보를 반환하지 않으며 존재하지 않는 UUID도 공개 가능 값으로 처리합니다. [Public Can Execute SECURITY DEFINER Function](https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable) 안내는 공개 RLS에서 이 제한된 definer 함수를 사용하는 의도된 설정입니다. 탈퇴·복원 상태와 처리 시각은 본인 조회 또는 서버 전용 RPC에만 제공합니다.
+공개 게시글·프로필의 RLS는 `account_content_visible(UUID)`로 공개 가능 여부만 확인합니다. 이 함수는 이메일·탈퇴 시각·회원 정보를 반환하지 않으며 존재하지 않는 UUID도 공개 가능 값으로 처리합니다. [Public Can Execute SECURITY DEFINER Function](https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable) 안내는 공개 RLS에서 이 제한된 definer 함수를 사용하는 의도된 설정입니다. 탈퇴·복원 상태와 처리 시각은 본인 조회 또는 서버 전용 RPC에만 제공합니다.
 
+## 네이버 지도
 
 Naver Cloud Maps 애플리케이션의 Web 서비스 URL에 운영 origin을 추가하고 공개 client ID를 `VITE_NAVER_MAP_CLIENT_ID`에 설정합니다. 네이버 길찾기는 별도로 사용할 수 있으며 출발지에 임의 위치를 넣지 않습니다.
 
