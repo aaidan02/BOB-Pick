@@ -140,6 +140,6 @@ Naver Cloud Maps 애플리케이션의 Web 서비스 URL에 운영 origin을 추
 
 GitHub Actions는 웹 빌드·Edge 타입 검사·PostgreSQL/RLS·브라우저 테스트를 수행합니다. 로컬 대역 테스트와 실제 운영 메일·Gemini 모델 권한·지도 인증의 검증은 구분합니다. 실제 계정으로 가입·찜 재접속·신청·관리자 처리·AI 추천·휴대폰 접속을 확인합니다.
 
-2026-11-12 추가 검증은 PostgreSQL/RLS·추천·정산·탈퇴·길찾기 40개와 브라우저 29개입니다. 가입 후 안내의 저장·건너뛰기·이메일 확인 후 안내·계정 간 접근 차단·기존 취향 보존·모바일 바로가기를 포함합니다. 브라우저의 새 AI·탈퇴 경로는 운영과 같은 공유 처리 함수를 호출하며 외부 Gemini와 Auth 전송만 로컬 대역으로 대체합니다. 운영에서는 마이그레이션 12개, AI v4·탈퇴 v2 배포와 음식점/메뉴 수, 정산의 서버 전용 권한, 취향·기록·답변의 직접 쓰기 차단을 별도로 확인합니다.
+2026-11-12 추가 검증은 PostgreSQL/RLS·추천·정산·탈퇴·길찾기 40개와 브라우저 29개입니다. 가입 후 안내의 저장·건너뛰기·이메일 확인 후 안내·계정 간 접근 차단·기존 취향 보존·모바일 바로가기를 포함합니다. 브라우저의 새 AI·탈퇴 경로는 운영과 같은 공유 처리 함수를 호출하며 외부 Gemini와 Auth 전송만 로컬 대역으로 대체합니다. 운영에서는 마이그레이션 13개, AI v4·탈퇴 v2 배포와 음식점/메뉴 수, 정산의 서버 전용 권한, 취향·기록·답변의 직접 쓰기 차단을 별도로 확인합니다.
 
 Supabase 보안 점검의 [인증 사용자 definer 함수 안내](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable)는 본인·관리자 검사를 거치는 의도된 API입니다. [정책 없는 RLS](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy)는 private 내부 테이블의 직접 접근 차단이며, 새 인덱스의 [미사용 안내](https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index)는 아직 사용 이력이 없다는 의미입니다. 기존 Auth의 [유출 비밀번호 검사 설정 안내](https://supabase.com/docs/guides/database/database-linter?lint=auth_leaked_password_protection)는 이번 배포에서 변경하지 않습니다.

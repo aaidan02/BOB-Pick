@@ -233,6 +233,7 @@ test('a withdrawn account is private and disabled immediately; restoration prese
   await rpc(null,'service_role')('restore_withdrawn_account',{p_user_id:id,p_session_id:fresh});
   assert.equal((await rpc(id,'authenticated',fresh)('account_recovery_status')).pending,false);
   assert.equal(await rpc(id)('is_active_member'),false);assert.equal(await rpc(id,'authenticated',fresh)('is_active_member'),true);
+  await assert.rejects(()=>rpc(id)('ai_quota_status'),/로그인 상태/);assert.equal((await rpc(id,'authenticated',fresh)('ai_quota_status')).used,0);
   assert.equal((await actor(id,'authenticated',tx=>tx.query('select * from favorites'),fresh)).rows.length,1);
   assert.deepEqual((await rpc(id,'authenticated',fresh)('my_food_preferences')).settings.liked_categories,['일식']);
   assert.equal((await actor(null,'anon',tx=>tx.query('select * from posts where user_id=$1',[id]))).rows.length,1);
