@@ -53,7 +53,7 @@
     <section id="filters" class="filters" aria-label="수동 조건 검색">
       <div class="section-head"><div><p class="section-eyebrow">오늘의 한 끼</p><h2>어떤 한 끼가 당기세요?</h2></div></div>
       <div class="filter-bottom"><div class="actions"><button id="pick" disabled>오늘의 메뉴 뽑기</button></div><p id="count" role="status">음식점을 불러오고 있어요.</p></div>
-      <label id="manual-taste-row" class="checkbox taste-use" hidden><input id="manual-taste" type="checkbox" checked>내 취향 반영</label>
+      <div id="manual-taste-row" class="taste-use" hidden><label class="checkbox"><input id="manual-taste" type="checkbox" checked>내 취향 반영</label><a href="#account" class="inline-link taste-settings-link" data-taste-settings>내 취향 설정 →</a></div>
       <p id="status" role="status" aria-live="polite"></p>
       <details id="filter-details" class="filter-details">
         <summary><span><strong class="details-more">자세히 보기</strong><strong class="details-less">접기</strong><small>가격·음식 종류·방문 시간 선택</small></span><span class="details-chevron" aria-hidden="true"></span></summary>
@@ -73,7 +73,7 @@
     </section>
     <section id="ai-chat" class="filters" aria-label="AI 채팅 추천">
       <div class="section-head"><div><p class="section-eyebrow">말로 편하게</p><h2>밥픽에게 물어보세요</h2><p id="ai-quota" class="ai-quota" role="status" aria-live="polite"></p></div><button id="chat-reset" type="button">새 대화</button></div>
-      <label id="chat-taste-row" class="checkbox taste-use" hidden><input id="chat-taste" type="checkbox" checked>내 취향 반영</label>
+      <div id="chat-taste-row" class="taste-use" hidden><label class="checkbox"><input id="chat-taste" type="checkbox" checked>내 취향 반영</label><a href="#account" class="inline-link taste-settings-link" data-taste-settings>내 취향 설정 →</a></div>
       <div id="chat-conversation" class="chat-conversation" data-busy="false">
         <div id="chat-log" role="log" aria-label="밥픽과의 대화" aria-live="polite" hidden></div>
         <section id="chat-quick" class="chat-quick" aria-labelledby="chat-quick-title" hidden>

@@ -1,4 +1,3 @@
-import {readPreferenceForm,renderPreferenceForm} from './preference-form';
 import type {User} from '@supabase/supabase-js';
 import {client,db,rpc} from './supabase';
 import {action,el,input,message} from './ui';
@@ -28,7 +27,6 @@ export async function refreshIdentity(){
 function setMode(next:string){
   mode=next;recovery=next==='password';
   el('auth-nickname-row').hidden=mode!=='signup';
-  el('signup-taste').hidden=mode!=='signup';(el('signup-taste-fields') as HTMLFieldSetElement).disabled=mode!=='signup';
   el('auth-password-confirm-row').hidden=!['signup','password'].includes(mode);
   const confirm=el<HTMLInputElement>('auth-password-confirm');confirm.disabled=!['signup','password'].includes(mode);confirm.required=!confirm.disabled;
   el<HTMLInputElement>('auth-nickname').disabled=mode!=='signup';el<HTMLInputElement>('auth-password').disabled=mode==='reset';el<HTMLInputElement>('auth-email').disabled=mode==='password';el('auth-password-row').hidden=mode==='reset';el('auth-email-row').hidden=mode==='password';
@@ -51,9 +49,8 @@ export async function initAuth(){
         message('auth-status','로그인했습니다.');await refreshIdentity();
       }else if(mode==='signup'){
         const nickname=input('auth-nickname');if(nickname.length<2||nickname.length>40)throw Error('닉네임은 2~40자로 입력해 주세요.');
-        const {data,error}=await client().auth.signUp({email,password,options:{data:{nickname,food_preferences:readPreferenceForm('signup-taste')},emailRedirectTo:redirectTo}});if(error)throw error;
+        const {data,error}=await client().auth.signUp({email,password,options:{data:{nickname},emailRedirectTo:redirectTo}});if(error)throw error;
         message('auth-status',data.session?'회원가입했습니다.':'이메일로 보낸 가입 확인 링크를 눌러 주세요.');await refreshIdentity();
-        renderPreferenceForm('signup-taste');(el('signup-taste') as HTMLDetailsElement).open=false;
       }else if(mode==='reset'){
         const {error}=await client().auth.resetPasswordForEmail(email,{redirectTo:location.origin+'/?recovery=1#account'});if(error)throw error;
         message('auth-status','가입한 이메일이면 비밀번호 재설정 메일이 발송됩니다.');
@@ -83,7 +80,6 @@ export async function initAuth(){
     if(!user||previous!==user.id){identityVersion++;admin=false;el('admin-link').hidden=true;el('admin-content').hidden=true;window.dispatchEvent(new Event('identity-changed'));}
     if(event==='SIGNED_OUT'){
       setMode('login');for(const id of ['auth-email','auth-password','auth-password-confirm','auth-nickname'])el<HTMLInputElement>(id).value='';
-      renderPreferenceForm('signup-taste');(el('signup-taste') as HTMLDetailsElement).open=false;
     }
     if(event==='PASSWORD_RECOVERY'){setMode('password');location.hash='account';}
     // Avoid awaiting another Auth call inside the Auth callback's lock.

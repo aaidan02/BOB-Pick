@@ -7,7 +7,12 @@ import {setActivePreferences,markPreferencesLoading,failPreferences} from './pre
 import {emptyPreferences,type FoodPreferences} from '../../supabase/functions/_shared/preferences';
 
 let owner:string|null=null,version=0,historyVersion=0,offset=0,tab='info';
+let onboardingBusy=false,onboardingAttempt=0;
 export function accountMarkup(){return `
+  <dialog id="taste-onboarding" class="taste-onboarding" aria-labelledby="taste-onboarding-heading" aria-describedby="taste-onboarding-intro">
+    <p class="section-eyebrow">가입을 환영해요!</p><h2 id="taste-onboarding-heading" tabindex="-1">어떤 음식을 좋아하세요?</h2><p id="taste-onboarding-intro" class="helper">취향에 맞는 한 끼를 골라드릴게요. 나중에는 내 정보에서 바꿀 수 있어요.</p>
+    <form id="onboarding-form" class="portal-form"><div id="onboarding-taste">${preferenceMarkup('onboarding-taste')}</div><div class="button-row onboarding-actions"><button id="onboarding-save">저장하고 시작하기</button><button id="onboarding-skip" type="button" class="secondary">나중에 설정하기</button></div><p id="onboarding-status" class="form-status" role="status"></p></form>
+  </dialog>
   <div class="surface member-summary"><div class="member-heading"><span class="member-avatar" aria-hidden="true">밥</span><div><p class="helper">오늘도 맛있는 하루 보내세요</p><h2 id="member-name"></h2><p id="member-email" class="helper"></p></div></div>
     <div class="account-metrics"><a href="#favorites"><span>찜한 메뉴</span><strong id="account-favorite-count">—</strong></a><button type="button" data-account-open="history"><span>추천 기록</span><strong id="account-history-count">—</strong></button><a href="#support"><span>고객센터 문의</span><strong id="account-support-count">—</strong></a></div>
   </div>
@@ -35,10 +40,15 @@ export async function loadAccountOverview(){
 async function loadPreferences(force=false){
   const mine=++version,who=user?.id;if(!who)return;
   try{
-    const data=await rpc<{settings:FoodPreferences;filter:Record<string,unknown>}>('my_food_preferences');
+    const data=await rpc<{settings:FoodPreferences;filter:Record<string,unknown>;onboardingComplete:boolean}>('my_food_preferences');
     if(mine!==version||user?.id!==who)return;
     if(force||el('taste-form').dataset.dirty!=='true'){renderPreferenceForm('member-taste',data.settings??emptyPreferences());el('taste-form').dataset.dirty='false';}
     setActivePreferences(who,data.filter??{});
+    const dialog=el<HTMLDialogElement>('taste-onboarding');
+    if(data.onboardingComplete===false&&!el('member-box').hidden&&!dialog.open&&!onboardingBusy){
+      renderPreferenceForm('onboarding-taste',data.settings??emptyPreferences());message('onboarding-status','');
+      dialog.showModal();dialog.scrollTop=0;el('taste-onboarding-heading').focus({preventScroll:true});
+    }else if(data.onboardingComplete===true&&dialog.open)dialog.close();
     const deletion=await rpc<{allowed:boolean;reason?:string}>('account_deletion_status');
     if(mine!==version||user?.id!==who)return;
     el('account-delete-form').hidden=!deletion.allowed;message('account-delete-reason',deletion.reason??'');
@@ -67,7 +77,28 @@ async function loadHistory(reset:boolean){
   }catch(error){if(mine===historyVersion&&user?.id===who)message('history-status',friendly(error));}
 }
 export function initAccount(){
-  el('signup-taste-content').innerHTML=preferenceMarkup('signup-taste');renderPreferenceForm('signup-taste');renderPreferenceForm('member-taste');
+  document.body.append(el('taste-onboarding'));
+  renderPreferenceForm('member-taste');renderPreferenceForm('onboarding-taste');
+  for(const link of document.querySelectorAll<HTMLAnchorElement>('[data-taste-settings]'))link.onclick=event=>{
+    event.preventDefault();if(!user){location.hash='account';return;}
+    selectTab('taste');location.hash='account';
+    requestAnimationFrame(()=>{if(location.hash==='#account'&&tab==='taste')el('account-tab-taste').focus({preventScroll:true});});
+  };
+  async function finishOnboarding(save:boolean){
+    if(onboardingBusy||!user)return;const who=user.id,mine=++onboardingAttempt;onboardingBusy=true;version++;
+    el<HTMLButtonElement>('onboarding-save').disabled=el<HTMLButtonElement>('onboarding-skip').disabled=true;message('onboarding-status','저장 중입니다.');
+    try{
+      if(save)await rpc('save_food_preferences',{p_settings:readPreferenceForm('onboarding-taste'),p_user_id:who});
+      else await rpc('complete_food_preference_onboarding',{p_user_id:who});
+      if(user?.id!==who||mine!==onboardingAttempt)return;
+      el<HTMLDialogElement>('taste-onboarding').close();await loadPreferences(true);
+      if(user?.id===who&&mine===onboardingAttempt)location.hash='filters';
+    }catch(error){if(user?.id===who&&mine===onboardingAttempt)message('onboarding-status',friendly(error));}
+    finally{if(mine===onboardingAttempt){onboardingBusy=false;el<HTMLButtonElement>('onboarding-save').disabled=el<HTMLButtonElement>('onboarding-skip').disabled=false;if(user?.id===who)markPreferencesLoading(false);}}
+  }
+  el<HTMLFormElement>('onboarding-form').onsubmit=event=>{event.preventDefault();void finishOnboarding(true);};
+  el('onboarding-skip').onclick=()=>void finishOnboarding(false);
+  el<HTMLDialogElement>('taste-onboarding').oncancel=event=>{event.preventDefault();void finishOnboarding(false);};
   for(const button of document.querySelectorAll<HTMLButtonElement>('[data-account-open]'))button.onclick=()=>selectTab(button.dataset.accountOpen!);
   document.querySelector('.account-tabs')!.addEventListener('keydown',event=>{
     const key=(event as KeyboardEvent).key,buttons=[...document.querySelectorAll<HTMLButtonElement>('.account-tabs button')],index=buttons.indexOf(document.activeElement as HTMLButtonElement);
@@ -107,7 +138,7 @@ export function initAccount(){
   };
   window.addEventListener('identity-changed',()=>{
     const who=user?.id??null;
-    if(owner!==who){owner=who;version++;historyVersion++;offset=0;setActivePreferences(null);markPreferencesLoading(!!who);el('history-list').replaceChildren();el('taste-form').dataset.dirty='false';renderPreferenceForm('member-taste');el('account-delete-form').hidden=true;selectTab('info');}
+    if(owner!==who){owner=who;version++;historyVersion++;onboardingAttempt++;onboardingBusy=false;el<HTMLDialogElement>('taste-onboarding').close();el<HTMLButtonElement>('onboarding-save').disabled=el<HTMLButtonElement>('onboarding-skip').disabled=false;renderPreferenceForm('onboarding-taste');offset=0;setActivePreferences(null);markPreferencesLoading(!!who);el('history-list').replaceChildren();el('taste-form').dataset.dirty='false';renderPreferenceForm('member-taste');el('account-delete-form').hidden=true;selectTab('info');}
     message('member-email',user?.email??'');
     if(who){void loadPreferences();void loadAccountOverview();}else{message('history-status','');for(const form of ['password-form','account-delete-form'])(el(form) as HTMLFormElement).reset();}
   });

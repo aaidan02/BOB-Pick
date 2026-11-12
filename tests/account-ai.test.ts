@@ -7,12 +7,19 @@ import {applyPreferenceFilter,emptyPreferences} from '../supabase/functions/_sha
 import {deleteOwnAccount,AccountDeletionError,type AccountDeletionDependencies} from '../supabase/functions/_shared/account-deletion.ts';
 let db:PGlite;
 const A='00000000-0000-4000-8000-000000000001',B='00000000-0000-4000-8000-000000000002',ADMIN='00000000-0000-4000-8000-000000000003',MASTER='00000000-0000-4000-8000-000000000005';
+const LEGACY='00000000-0000-4000-8000-000000000007';
 before(async()=>{
   db=new PGlite();await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;
     create table auth.users(id uuid primary key,email varchar(255),raw_user_meta_data jsonb default '{}',email_confirmed_at timestamptz,deleted_at timestamptz,banned_until timestamptz,is_anonymous boolean default false);
     create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
     grant usage on schema public,auth to anon,authenticated,service_role;grant execute on function auth.uid() to anon,authenticated;`);
-  for(const file of readdirSync('supabase/migrations').sort())await db.exec(readFileSync('supabase/migrations/'+file,'utf8'));
+  for(const file of readdirSync('supabase/migrations').sort()){
+    if(file.endsWith('_post_signup_preferences.sql')){
+      await db.query('insert into auth.users(id,email) values($1,$2)',[LEGACY,'existing@example.test']);
+      await db.query("update public.food_preferences set liked_categories=array['한식'],max_price=10000 where user_id=$1",[LEGACY]);
+    }
+    await db.exec(readFileSync('supabase/migrations/'+file,'utf8'));
+  }
   await db.exec(readFileSync('supabase/seed.sql','utf8'));
   for(const [id,name] of [[A,'회원가'],[B,'회원나'],[ADMIN,'관리자'],[MASTER,'마스터']])await db.query('insert into auth.users(id,email,raw_user_meta_data,email_confirmed_at) values($1,$2,$3,now())',[id,id+'@example.test',{nickname:name}]);
   await db.query('insert into private.admin_members(user_id,is_master) values($1,false),($2,true)',[ADMIN,MASTER]);
@@ -118,12 +125,28 @@ test('preferences are private, mutually exclusive, validated and bound to the ex
   const count=(await rpc(A)('pick_restaurants',{p_filter:applyPreferenceFilter({checkHours:false},saved.filter),p_size:3}));
   assert.equal(count.restaurants.length,3);assert(count.restaurants.every((r:any)=>r.restaurant.categories.includes('한식')&&!r.restaurant.categories.includes('치킨')));
 });
-test('signup stores optional preferences before email confirmation and safely ignores malformed metadata',async()=>{
+test('new accounts start neutral and collect preferences only after authenticated signup completion',async()=>{
   const first=crypto.randomUUID(),second=crypto.randomUUID();
   await db.query('insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3)',[first,'signup@example.test',{nickname:'새회원',food_preferences:{...emptyPreferences(),liked_categories:['일식']}}]);
-  assert.deepEqual((await db.query<any>('select liked_categories from food_preferences where user_id=$1',[first])).rows[0].liked_categories,['일식']);
+  const initial=(await db.query<any>('select liked_categories,onboarding_completed_at from food_preferences where user_id=$1',[first])).rows[0];
+  assert.deepEqual(initial.liked_categories,[]);assert.equal(initial.onboarding_completed_at,null);
   await db.query('insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3)',[second,'malformed@example.test',{food_preferences:{liked_categories:'invalid'}}]);
   assert.deepEqual((await db.query<any>('select liked_categories from food_preferences where user_id=$1',[second])).rows[0].liked_categories,[]);
+  assert.equal((await rpc(first)('my_food_preferences')).onboardingComplete,false);
+  await assert.rejects(()=>rpc(null,'anon')('complete_food_preference_onboarding'),/permission denied/);
+  await assert.rejects(()=>rpc(second)('complete_food_preference_onboarding',{p_user_id:first}),/계정이 변경/);
+  await assert.rejects(()=>actor(first,'authenticated',tx=>tx.query('update food_preferences set onboarding_completed_at=now() where user_id=$1',[first])),/permission denied/);
+  assert.equal((await rpc(first)('my_food_preferences')).onboardingComplete,false);
+  await rpc(first)('save_food_preferences',{p_settings:{...emptyPreferences(),liked_categories:['일식']},p_user_id:first});
+  const saved=await rpc(first)('my_food_preferences');assert.equal(saved.onboardingComplete,true);assert.deepEqual(saved.settings.liked_categories,['일식']);
+  await rpc(second)('complete_food_preference_onboarding',{p_user_id:second});
+  const skipped=await rpc(second)('my_food_preferences');assert.equal(skipped.onboardingComplete,true);assert.deepEqual(skipped.settings,emptyPreferences());
+  const time=(await db.query<any>('select onboarding_completed_at from food_preferences where user_id=$1',[second])).rows[0].onboarding_completed_at;
+  await rpc(second)('complete_food_preference_onboarding',{p_user_id:second});
+  assert.equal((await db.query<any>('select onboarding_completed_at from food_preferences where user_id=$1',[second])).rows[0].onboarding_completed_at.getTime(),time.getTime());
+});
+test('the onboarding migration preserves existing preferences and does not reprompt existing members',async()=>{
+  const data=await rpc(LEGACY)('my_food_preferences');assert.equal(data.onboardingComplete,true);assert.deepEqual(data.settings.liked_categories,['한식']);assert.equal(data.settings.max_price,10000);
 });
 test('recommendation history uses real menu snapshots, deduplicates events and denies cross-account access',async()=>{
   const menu=(await db.query<any>("select id,price from menus where restaurant_id='15779' and name='대구탕' limit 1")).rows[0],event=crypto.randomUUID();

@@ -59,15 +59,20 @@ test('first-visit help still works without browser storage or a ready catalog AP
   }finally{await context.close();}
 });
 async function login(page:any,email='a@example.test'){
-  await page.goto('/#account');await page.locator('#auth-email').fill(email);await page.locator('#auth-password').fill('test-password');
+  await page.goto('/#account');await page.locator('[data-auth-mode="login"]').click();await page.locator('#auth-email').fill(email);await page.locator('#auth-password').fill('test-password');
   const signed=page.waitForResponse((r:any)=>r.url().includes('/auth/v1/token'));
   await page.locator('#auth-submit').click();await expect(page.locator('#member-box')).toBeVisible();return (await (await signed).json()).access_token;
 }
 async function signupMember(page:any,email:string,configure?:()=>Promise<void>){
   await page.goto('/#account');await page.locator('[data-auth-mode="signup"]').click();
   await page.locator('#auth-email').fill(email);await page.locator('#auth-password').fill('test-password');await page.locator('#auth-password-confirm').fill('test-password');await page.locator('#auth-nickname').fill('새로운 밥친구');
-  if(configure)await configure();
-  await page.locator('#auth-submit').click();await expect(page.locator('#member-box')).toBeVisible();await expect(page.locator('#member-email')).toHaveText(email);await expect(page.locator('#manual-taste-row')).not.toHaveAttribute('hidden');
+  await expect(page.locator('#auth-form .taste-section')).toHaveCount(0);await expect(page.locator('#taste-onboarding')).not.toBeVisible();
+  const registered=page.waitForRequest((r:any)=>r.url().includes('/auth/v1/signup'));
+  await page.locator('#auth-submit').click();expect((await registered).postDataJSON().data).toEqual({nickname:'새로운 밥친구'});
+  await expect(page.locator('#taste-onboarding')).toBeVisible();
+  if(configure){await configure();await page.locator('#onboarding-save').click();}else await page.locator('#onboarding-skip').click();
+  await expect(page.locator('#taste-onboarding')).not.toBeVisible();await page.locator('.service-nav a[href="#account"]').click();
+  await expect(page.locator('#member-box')).toBeVisible();await expect(page.locator('#member-email')).toHaveText(email);await expect(page.locator('#manual-taste-row')).not.toHaveAttribute('hidden');
 }
 async function expectResultsRevealed(page:any){
   // Verify the information the visitor needs, including after layout changes.
@@ -419,19 +424,18 @@ test('admins manage accounts while a pinned master cannot be revoked by self or 
   }
 });
 
-test('optional signup preferences persist, like/avoid are exclusive and manual search uses soft likes with hard exclusions',async({page})=>{
+test('preferences are collected after signup, persist once completed and manual search uses soft likes with hard exclusions',async({page})=>{
   await signupMember(page,'taste-new@example.test',async()=>{
-    await page.locator('#signup-taste summary').click();
-    const korean=page.locator('#signup-taste-categories .taste-row').filter({hasText:'한식'});
+    const korean=page.locator('#onboarding-taste-categories .taste-row').filter({hasText:'한식'});
     await korean.getByRole('button',{name:/좋아요/}).click();await korean.getByRole('button',{name:/피할래요/}).click();await expect(korean.getByRole('button',{name:/좋아요/})).toHaveAttribute('aria-pressed','false');
-    await korean.getByRole('button',{name:/좋아요/}).click();await page.locator('#signup-taste-categories .taste-row').filter({hasText:'중식'}).getByRole('button',{name:/피할래요/}).click();
-    await page.locator('#signup-taste-forms').getByRole('button',{name:'밥',exact:true}).click();await page.locator('#signup-taste-menus').getByRole('button',{name:'짜장면',exact:true}).click();
-    await page.locator('#signup-taste-min').fill('5000');await page.locator('#signup-taste-max').fill('10000');await page.locator('#signup-taste-days').getByRole('button',{name:'14일',exact:true}).click();
+    await korean.getByRole('button',{name:/좋아요/}).click();await page.locator('#onboarding-taste-categories .taste-row').filter({hasText:'중식'}).getByRole('button',{name:/피할래요/}).click();
+    await page.locator('#onboarding-taste-forms').getByRole('button',{name:'밥',exact:true}).click();await page.locator('#onboarding-taste-menus').getByRole('button',{name:'짜장면',exact:true}).click();
+    await page.locator('#onboarding-taste-min').fill('5000');await page.locator('#onboarding-taste-max').fill('10000');await page.locator('#onboarding-taste-days').getByRole('button',{name:'14일',exact:true}).click();
   });
   await page.getByRole('tab',{name:'내 취향',exact:true}).click();
   await expect(page.locator('#member-taste-categories .taste-row').filter({hasText:'한식'}).getByRole('button',{name:/좋아요/})).toHaveAttribute('aria-pressed','true');
   await expect(page.locator('#member-taste-categories .taste-row').filter({hasText:'중식'}).getByRole('button',{name:/피할래요/})).toHaveAttribute('aria-pressed','true');await expect(page.locator('#member-taste-min')).toHaveValue('5000');
-  await page.reload();await page.getByRole('tab',{name:'내 취향',exact:true}).click();await expect(page.locator('#member-taste-max')).toHaveValue('10000');await expect(page.locator('#member-taste-days').getByRole('button',{name:'14일',exact:true})).toHaveAttribute('aria-pressed','true');
+  await page.reload();await expect(page.locator('#taste-onboarding')).not.toBeVisible();await page.getByRole('tab',{name:'내 취향',exact:true}).click();await expect(page.locator('#member-taste-max')).toHaveValue('10000');await expect(page.locator('#member-taste-days').getByRole('button',{name:'14일',exact:true})).toHaveAttribute('aria-pressed','true');
   await page.locator('.service-nav a[href="#filters"]').click();await page.locator('#filter-details summary').click();await expect(page.locator('#min')).toHaveValue('5000');await page.locator('#time-enabled').uncheck();await expect(page.locator('#pick')).toBeEnabled();
   const searching=page.waitForRequest(r=>r.url().endsWith('/rpc/pick_restaurants'));await page.locator('#pick').click();const filter=(await searching).postDataJSON().p_filter;
   expect(filter.preferredCategories).toEqual(['한식']);expect(filter.excludedCategories).toEqual(['중식']);expect(filter.excludedTerms).toEqual(['짜장면']);expect(filter.min).toBe(5000);expect(filter.max).toBe(10000);
@@ -490,4 +494,34 @@ test('account preferences, history and customer center fit mobile screens and pr
     await page.locator('.site-footer a[href="#support"]').click();await expect(page.locator('#support-panel')).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.locator('.service-nav a[href="#account"]').click();
   }
   await page.getByRole('tab',{name:'내 정보',exact:true}).focus();await page.keyboard.press('ArrowRight');await expect(page.getByRole('tab',{name:'내 취향',exact:true})).toHaveAttribute('aria-selected','true');
+});
+
+test('skipping the post-signup preference step is remembered and both main-page shortcuts open My Taste without toggling its checkbox',async({page})=>{
+  const email='taste-later@example.test';await signupMember(page,email);
+  const ready=page.waitForResponse(r=>r.url().endsWith('/rpc/my_food_preferences'));await page.reload();expect((await (await ready).json()).onboardingComplete).toBe(true);await expect(page.locator('#taste-onboarding')).not.toBeVisible();
+  await page.locator('#logout').click();const signedIn=page.waitForResponse(r=>r.url().endsWith('/rpc/my_food_preferences'));await login(page,email);expect((await (await signedIn).json()).onboardingComplete).toBe(true);
+  await expect(page.locator('#taste-onboarding')).not.toBeVisible();
+  for(const width of [1280,390,320]){
+    await page.setViewportSize({width,height:844});await page.locator('.service-nav a[href="#filters"]').click();
+    for(const prefix of ['manual','chat']){
+      const row=page.locator('#'+prefix+'-taste-row'),checkbox=page.locator('#'+prefix+'-taste');await checkbox.uncheck();
+      const distance=await row.evaluate(node=>Math.abs(node.querySelector('label')!.getBoundingClientRect().top-node.querySelector('a')!.getBoundingClientRect().top));expect(distance).toBeLessThan(12);
+      await row.getByRole('link',{name:'내 취향 설정 →'}).click();await expect(page).toHaveURL(/#account$/);await expect(page.getByRole('tab',{name:'내 취향',exact:true})).toHaveAttribute('aria-selected','true');await expect(page.locator('#taste-form')).toBeVisible();await expect(page.locator('#taste-onboarding')).not.toBeVisible();
+      expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+      await page.locator('.service-nav a[href="#filters"]').click();await expect(checkbox).not.toBeChecked();
+    }
+  }
+});
+
+test('email confirmation postpones preference collection until the first signed-in session',async({page})=>{
+  const email='confirm-taste@example.test';await page.route('**/auth/v1/signup**',async route=>{const response=await route.fetch(),packet=await response.json();await route.fulfill({response,json:packet.user});});
+  await page.goto('/#account');await page.locator('[data-auth-mode="signup"]').click();await page.locator('#auth-email').fill(email);await page.locator('#auth-password').fill('test-password');await page.locator('#auth-password-confirm').fill('test-password');await page.locator('#auth-nickname').fill('가입 후 취향');
+  await page.locator('#auth-submit').click();await expect(page.locator('#auth-status')).toContainText('가입 확인 링크');await expect(page.locator('#taste-onboarding')).not.toBeVisible();await expect(page.locator('#auth-box')).toBeVisible();
+  await login(page,email);await expect(page.locator('#taste-onboarding')).toBeVisible();await expect(page.locator('#taste-onboarding-heading')).toBeFocused();
+  await page.goto('/');await expect(page.locator('#account-panel')).toBeHidden();await expect(page.locator('body > #taste-onboarding')).toBeVisible();
+  await page.setViewportSize({width:320,height:700});expect(await page.locator('#taste-onboarding').evaluate(node=>{const r=node.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;})).toBe(true);
+  await page.screenshot({path:'build/post-signup-taste-mobile.png'});
+  await page.locator('#onboarding-taste-categories .taste-row').filter({hasText:'일식'}).getByRole('button',{name:/좋아요/}).click();await page.locator('#onboarding-save').click();await expect(page.locator('#taste-onboarding')).not.toBeVisible();
+  await page.locator('#manual-taste-row [data-taste-settings]').click();await expect(page.locator('#member-taste-categories .taste-row').filter({hasText:'일식'}).getByRole('button',{name:/좋아요/})).toHaveAttribute('aria-pressed','true');
+  const ready=page.waitForResponse(r=>r.url().endsWith('/rpc/my_food_preferences'));await page.reload();expect((await (await ready).json()).onboardingComplete).toBe(true);await expect(page.locator('#taste-onboarding')).not.toBeVisible();
 });

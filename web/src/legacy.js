@@ -493,7 +493,7 @@ const save=node.querySelector('.save-menu');save.hidden=!data.get('_menuId');sav
   for(const key of ['min','max'])el(key).addEventListener('input',()=>delete el(key).dataset.fromTaste);
   window.addEventListener('food-preferences-changed',syncTaste);
   window.addEventListener('food-preferences-loading',updatePickButton);
-  if(!el('manual-taste-row').hidden&&!preferencesLoading())syncTaste();
+  if(!el('manual-taste-row').hidden)syncTaste();
   getText('/api/count?time=all').then(text=>{
     total=Number(text);
     if(!Number.isInteger(total)||total<1)throw new Error('추첨할 음식점이 없습니다.');

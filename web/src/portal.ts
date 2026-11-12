@@ -21,7 +21,6 @@ export async function initPortal(){
         <label id="auth-password-row">비밀번호<input id="auth-password" type="password" autocomplete="current-password" minlength="8" maxlength="128" required placeholder="8자 이상 입력해 주세요"></label>
         <label id="auth-password-confirm-row" hidden>비밀번호 확인<input id="auth-password-confirm" type="password" autocomplete="new-password" minlength="8" maxlength="128" disabled></label>
         <label id="auth-nickname-row" hidden>닉네임<input id="auth-nickname" autocomplete="nickname" minlength="2" maxlength="40" placeholder="동네에서 사용할 이름"></label>
-        <details id="signup-taste" class="signup-taste" hidden><summary>음식 취향 설정 <span class="helper">선택</span></summary><fieldset id="signup-taste-fields" disabled><legend class="sr-only">가입 시 음식 취향</legend><div id="signup-taste-content"></div></fieldset></details>
         <button id="auth-submit" type="submit">로그인</button>
       </form><button type="button" data-auth-mode="reset" class="text-button">비밀번호를 잊으셨나요?</button><p id="auth-status" class="form-status" role="status"></p>
     </div>
