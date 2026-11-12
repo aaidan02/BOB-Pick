@@ -1,6 +1,7 @@
 import {test,expect} from '@playwright/test';
 import {legacyRecommendation} from '../supabase/functions/_shared/recommendation';
 import {naverMapSdkFixture} from './naver-sdk-fixture';
+import {hasMapCoordinates} from '../web/src/naver';
 test.beforeEach(async({page})=>{
   await page.route('https://oapi.map.naver.com/**',route=>route.abort());
   // Existing feature flows start after onboarding. Guide tests use clean contexts.
@@ -261,6 +262,12 @@ test('request restaurant search supports name, address and IDs and clears stale 
 test('map viewport follows grid changes, hidden views, mobile sizes and zoom pixel ratios',async({page})=>{
   await page.unroute('https://oapi.map.naver.com/**');
   await page.route('https://oapi.map.naver.com/**',route=>route.fulfill({contentType:'text/javascript',body:naverMapSdkFixture}));
+  await page.route('**/rpc/pick_restaurants',async route=>{
+    const response=await route.fetch(),batch=await response.json();
+    // Exercise a valid registration without coordinates on every run.
+    batch.restaurants[0].restaurant.latitude=null;
+    await route.fulfill({response,json:batch});
+  });
   await page.goto('/');await expect(page.locator('.test-map-tiles')).toBeVisible();
   async function filled(){await expect.poll(()=>page.evaluate(()=>{
     const node=document.getElementById('map')!,tiles=node.querySelector('.test-map-tiles') as HTMLElement;
@@ -268,9 +275,13 @@ test('map viewport follows grid changes, hidden views, mobile sizes and zoom pix
   })).toBe(true);}
   await filled();await page.locator('#filter-details summary').click();await page.locator('#time-enabled').uncheck();await page.locator('#category').selectOption('한식');
   await expect(page.locator('#results-grid')).toHaveClass(/multiple/);await filled();
-  await expect(page.locator('#pick')).toBeEnabled();await page.locator('#pick').click();await expect(page.locator('.restaurant-card:visible')).toHaveCount(3);
-  await expect.poll(()=>page.evaluate(()=>(window as any).mapTest.fits.length)).toBeGreaterThan(0);
-  expect(await page.evaluate(()=>(window as any).mapTest.fits.every((fit:any)=>fit.width===fit.container&&fit.points===3))).toBe(true);
+  await expect(page.locator('#pick')).toBeEnabled();const picked=page.waitForResponse(r=>r.url().endsWith('/rpc/pick_restaurants'));await page.locator('#pick').click();await expect(page.locator('.restaurant-card:visible')).toHaveCount(3);
+  // Restaurant registrations may omit coordinates. Only valid
+  // selected locations belong in the map bounds, regardless of the random draw.
+  const batch=await (await picked).json(),points=batch.restaurants.filter((item:any)=>hasMapCoordinates(item.restaurant)).length;
+  await expect.poll(()=>page.evaluate(()=>(window as any).mapTest.markers.filter((marker:any)=>marker.map).length)).toBe(points);
+  if(points>1)await expect.poll(()=>page.evaluate(()=>(window as any).mapTest.fits.length)).toBeGreaterThan(0);
+  expect(await page.evaluate(expected=>(window as any).mapTest.fits.every((fit:any)=>fit.width===fit.container&&fit.points===expected),points)).toBe(true);
   await page.setViewportSize({width:390,height:844});await filled();await page.setViewportSize({width:1280,height:720});await filled();
   await page.locator('#category').selectOption('');await expect(page.locator('#results-grid')).not.toHaveClass(/multiple/);await filled();
   await page.evaluate(()=>{const map=(window as any).testNaverMap;map.setCenter({lat:36.42,lng:127.48});map.setZoom(18);});
