@@ -11,6 +11,8 @@ const LEGACY='00000000-0000-4000-8000-000000000007';
 before(async()=>{
   db=new PGlite();await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;
     create table auth.users(id uuid primary key,email varchar(255),raw_user_meta_data jsonb default '{}',email_confirmed_at timestamptz,deleted_at timestamptz,banned_until timestamptz,is_anonymous boolean default false);
+    create table auth.sessions(id uuid primary key,user_id uuid references auth.users(id) on delete cascade,not_after timestamptz);
+    create function auth.jwt() returns jsonb language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb$$;
     create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
     grant usage on schema public,auth to anon,authenticated,service_role;grant execute on function auth.uid() to anon,authenticated;`);
   for(const file of readdirSync('supabase/migrations').sort()){
@@ -28,12 +30,12 @@ before(async()=>{
   await db.exec("insert into menus(restaurant_id,name,source_index,price,forms) values('ai-always','테스트 밥',0,5000,array['밥'])");
 });
 after(async()=>{await db?.close();});
-async function actor<T>(id:string|null,role:string,work:(tx:any)=>Promise<T>){return db.transaction(async tx=>{await tx.exec('set local role '+role);await tx.query("select set_config('request.jwt.claim.sub',$1,true)",[id??'']);return work(tx);});}
-const rpc=(id:string|null,role='authenticated')=>async(name:string,args:Record<string,unknown>={})=>actor(id,role,async tx=>{
+async function actor<T>(id:string|null,role:string,work:(tx:any)=>Promise<T>,sessionId:string|null=id){return db.transaction(async tx=>{await tx.exec('set local role '+role);await tx.query("select set_config('request.jwt.claim.sub',$1,true),set_config('request.jwt.claims',$2,true)",[id??'',JSON.stringify({session_id:sessionId})]);return work(tx);});}
+const rpc=(id:string|null,role='authenticated',sessionId:string|null=id)=>async(name:string,args:Record<string,unknown>={})=>actor(id,role,async tx=>{
   const values=Object.values(args),names=Object.keys(args).map((key,index)=>key+'=> $'+(index+1)).join(',');
   if(name==='recommend_candidates')return (await tx.query(`select * from public.${name}(${names})`,values)).rows;
   return (await tx.query(`select public.${name}(${names}) value`,values)).rows[0].value;
-});
+},sessionId);
 async function used(id=A){return (await rpc(id)('ai_quota_status')).used;}
 async function resetQuota(){await db.exec('delete from private.ai_requests;delete from private.ai_usage;');}
 function plan(extra:Record<string,unknown>={}){return {intent:'recommendation',categories:['한식'],excludedCategories:[],forms:['국·탕·찌개'],excludedForms:[],menuTerms:[],excludedTerms:[],restaurantTerms:[],excludedRestaurants:[],minPrice:-1,maxPrice:10000,date:'',time:'',allHours:true,question:'',...extra};}
@@ -180,7 +182,7 @@ test('customer tickets are private, cannot forge replies and permit audited admi
   const updated=(await actor(B,'authenticated',tx=>tx.query('select * from support_tickets where id=$1',[row.id]))).rows[0];assert.equal(updated.status,'answered');assert.equal(updated.reply,'오류를 확인했습니다.');
   const audit=(await db.query<any>("select * from change_logs where entity='support_tickets' and entity_id=$1",[row.id])).rows[0];assert(!JSON.stringify(audit).includes(text));
 });
-test('account deletion cascades private data, removes posts and preserves anonymous restaurant processing',async()=>{
+test('permanent erasure cascades private data, removes posts and preserves anonymous restaurant processing',async()=>{
   const id=crypto.randomUUID();await db.query('insert into auth.users(id,email) values($1,$2)',[id,'delete@example.test']);
   const menu=(await db.query<any>("select id from menus where restaurant_id='15779' and name='대구탕' limit 1")).rows[0];
   await actor(id,'authenticated',async tx=>{await tx.query('insert into favorites(user_id,menu_id) values($1,$2)',[id,menu.id]);await tx.query("insert into posts(user_id,title,body) values($1,'삭제할 글','내용')",[id]);await tx.query("insert into support_tickets(user_id,category,subject,body) values($1,'account','탈퇴 문의','내용')",[id]);});
@@ -191,11 +193,69 @@ test('account deletion cascades private data, removes posts and preserves anonym
   const retained=(await db.query<any>('select user_id,message from requests where id=$1',[request])).rows[0];assert.equal(retained.user_id,null);assert.equal(retained.message,'');
   assert.equal((await rpc(MASTER)('account_deletion_status')).allowed,false);await assert.rejects(()=>db.query('delete from auth.users where id=$1',[MASTER]),/마스터/);
 });
-test('withdrawal requires confirmation, the same signed-in account and current password before any delete',async()=>{
-  const calls:string[]=[],deps:AccountDeletionDependencies={status:async()=>({allowed:true}),verifyPassword:async password=>password==='correct-password'?{userId:A,token:'verified-test-token'}:null,signOutAll:async token=>{calls.push('logout:'+token);},deleteUser:async id=>{calls.push('delete:'+id);}};
-  await assert.rejects(()=>deleteOwnAccount({confirm:false,expectedUserId:A,password:'correct-password'},A,deps),AccountDeletionError);
-  await assert.rejects(()=>deleteOwnAccount({confirm:true,expectedUserId:B,password:'correct-password'},A,deps),AccountDeletionError);
-  await assert.rejects(()=>deleteOwnAccount({confirm:true,expectedUserId:A,password:'wrong-password'},A,deps),/현재 비밀번호/);assert.deepEqual(calls,[]);
-  await assert.rejects(()=>deleteOwnAccount({confirm:true,expectedUserId:A,password:'correct-password'},A,{...deps,status:async()=>({allowed:false,reason:'마스터 보호'})}),/마스터/);assert.deepEqual(calls,[]);
-  assert.equal((await deleteOwnAccount({confirm:true,expectedUserId:A,password:'correct-password'},A,deps)).deleted,true);assert.deepEqual(calls,['logout:verified-test-token','delete:'+A]);
+test('withdrawal and restoration require confirmation, the same account and a current password',async()=>{
+  const calls:string[]=[],verified={userId:A,token:'verified-test-token',sessionId:A,session:{access_token:'verified-test-token',refresh_token:'test-refresh'}};
+  const deps:AccountDeletionDependencies={status:async()=>({allowed:true}),verifyPassword:async password=>password==='correct-password'?verified:null,
+    revokeSessions:async(token,scope)=>{calls.push('logout:'+scope+':'+token);},withdraw:async id=>{calls.push('withdraw:'+id);return {restoreUntil:'2026-11-19T00:00:00Z'};},restore:async(id,sessionId)=>{calls.push('restore:'+id+':'+sessionId);}};
+  await assert.rejects(()=>deleteOwnAccount({confirm:true,expectedUserId:A,password:'correct-password'},A,deps),/새로고침/);
+  await assert.rejects(()=>deleteOwnAccount({retentionDays:7,confirm:false,expectedUserId:A,password:'correct-password'},A,deps),AccountDeletionError);
+  await assert.rejects(()=>deleteOwnAccount({retentionDays:7,confirm:true,expectedUserId:B,password:'correct-password'},A,deps),AccountDeletionError);
+  await assert.rejects(()=>deleteOwnAccount({retentionDays:7,confirm:true,expectedUserId:A,password:'wrong-password'},A,deps),/현재 비밀번호/);assert.deepEqual(calls,[]);
+  await assert.rejects(()=>deleteOwnAccount({retentionDays:7,confirm:true,expectedUserId:A,password:'correct-password'},A,{...deps,status:async()=>({allowed:false,reason:'마스터 보호'})}),/마스터/);assert.deepEqual(calls,[]);
+  const result=await deleteOwnAccount({retentionDays:7,confirm:true,expectedUserId:A,password:'correct-password'},A,deps);assert.equal('withdrawn' in result&&result.withdrawn,true);assert.deepEqual(calls,['withdraw:'+A,'logout:global:verified-test-token']);
+  calls.length=0;const restored=await deleteOwnAccount({retentionDays:7,action:'restore',confirm:true,expectedUserId:A,password:'correct-password'},A,deps);assert.deepEqual('session' in restored&&restored.session,verified.session);assert.deepEqual(calls,['logout:others:verified-test-token','restore:'+A+':'+A]);
+  calls.length=0;await assert.rejects(()=>deleteOwnAccount({retentionDays:7,action:'restore',confirm:true,expectedUserId:A,password:'correct-password'},A,{...deps,revokeSessions:async()=>{throw Error('revocation failed');}}),/revocation failed/);assert.deepEqual(calls,[]);
+  const pending=await deleteOwnAccount({retentionDays:7,confirm:true,expectedUserId:A,password:'correct-password'},A,{...deps,revokeSessions:async()=>{throw Error('revocation failed');}});assert.equal('sessionsRevoked' in pending&&pending.sessionsRevoked,false);assert.deepEqual(calls,['withdraw:'+A]);
+});
+
+test('a withdrawn account is private and disabled immediately; restoration preserves data but rejects revoked JWT sessions',async()=>{
+  const id=crypto.randomUUID(),fresh=crypto.randomUUID();await db.query('insert into auth.users(id,email) values($1,$2)',[id,'restore@example.test']);await db.query('insert into auth.sessions(id,user_id) values($1,$1)',[id]);
+  const menu=(await db.query<any>("select id from menus where restaurant_id='15779' and name='대구탕' limit 1")).rows[0];
+  await rpc(id)('save_food_preferences',{p_settings:{...emptyPreferences(),liked_categories:['일식']},p_user_id:id});
+  await actor(id,'authenticated',async tx=>{await tx.query('insert into favorites(user_id,menu_id) values($1,$2)',[id,menu.id]);await tx.query("insert into posts(user_id,title,body) values($1,'복원할 글','보관한 글')",[id]);});
+  const request=await rpc(id)('begin_ai_request');
+  await assert.rejects(()=>rpc(id)('request_account_withdrawal',{p_user_id:id}),/permission denied/);
+  await assert.rejects(()=>rpc(null,'anon')('account_recovery_status'),/permission denied/);
+  const pending=await rpc(null,'service_role')('request_account_withdrawal',{p_user_id:id});
+  const state=(await db.query<any>('select * from private.account_lifecycle where user_id=$1',[id])).rows[0];assert.equal(state.purge_at.getTime()-state.withdrawn_at.getTime(),7*86400000);
+  assert.equal((await rpc(null,'service_role')('request_account_withdrawal',{p_user_id:id})).restoreUntil,pending.restoreUntil);
+  assert.equal((await rpc(id)('account_recovery_status')).pending,true);assert.equal((await rpc(B)('account_recovery_status')).pending,false);
+  assert.equal((await actor(null,'anon',tx=>tx.query('select * from posts where user_id=$1',[id]))).rows.length,0);
+  assert.equal((await actor(null,'anon',tx=>tx.query('select * from profiles where id=$1',[id]))).rows.length,0);
+  assert.equal((await actor(id,'authenticated',tx=>tx.query('select * from favorites'))).rows.length,0);
+  await assert.rejects(()=>rpc(id)('save_food_preferences',{p_settings:emptyPreferences(),p_user_id:id}),/탈퇴/);
+  await assert.rejects(()=>rpc(id)('submit_request',{p_kind:'correction',p_restaurant_id:'15779',p_payload:{phone:'1'},p_message:'차단되어야 함'}),/탈퇴/);
+  await assert.rejects(()=>rpc(id)('begin_ai_request'),/탈퇴/);
+  assert.equal((await rpc(null,'service_role')('complete_ai_request',{p_request_id:request,p_success:true})).completed,false);
+  await db.query('delete from auth.sessions where user_id=$1',[id]);await db.query('insert into auth.sessions(id,user_id) values($1,$2)',[fresh,id]);
+  await assert.rejects(()=>rpc(id)('restore_withdrawn_account',{p_user_id:id,p_session_id:fresh}),/permission denied/);
+  await assert.rejects(()=>rpc(null,'service_role')('restore_withdrawn_account',{p_user_id:id,p_session_id:B}),/본인 확인/);
+  await rpc(null,'service_role')('restore_withdrawn_account',{p_user_id:id,p_session_id:fresh});
+  assert.equal((await rpc(id,'authenticated',fresh)('account_recovery_status')).pending,false);
+  assert.equal(await rpc(id)('is_active_member'),false);assert.equal(await rpc(id,'authenticated',fresh)('is_active_member'),true);
+  assert.equal((await actor(id,'authenticated',tx=>tx.query('select * from favorites'),fresh)).rows.length,1);
+  assert.deepEqual((await rpc(id,'authenticated',fresh)('my_food_preferences')).settings.liked_categories,['일식']);
+  assert.equal((await actor(null,'anon',tx=>tx.query('select * from posts where user_id=$1',[id]))).rows.length,1);
+  await assert.rejects(()=>rpc(id)('save_food_preferences',{p_settings:emptyPreferences(),p_user_id:id}),/탈퇴/);
+  assert.equal((await db.query<any>('select count(*) n from auth.users where id=$1',[id])).rows[0].n,1);
+});
+
+test('expired withdrawals cannot be restored or extended; scheduled erasure removes private data and enforces AI retention',async()=>{
+  const id=crypto.randomUUID(),fresh=crypto.randomUUID();await db.query('insert into auth.users(id,email) values($1,$2)',[id,'expired@example.test']);await db.query('insert into auth.sessions(id,user_id) values($1,$2)',[fresh,id]);
+  await rpc(id)('save_recommendation_history',{p_event_id:crypto.randomUUID(),p_source:'manual',p_filter:{},p_items:[{restaurantId:'15779',menuId:null}]});
+  const request=await rpc(id)('submit_request',{p_kind:'correction',p_restaurant_id:'15779',p_payload:{email:'private@example.test'},p_message:'삭제할 개인정보'});
+  await rpc(null,'service_role')('request_account_withdrawal',{p_user_id:id});
+  await db.query("update private.account_lifecycle set withdrawn_at=now()-interval '7 days',purge_at=now() where user_id=$1",[id]);
+  assert.equal((await rpc(id)('account_recovery_status')).canRestore,false);
+  await assert.rejects(()=>rpc(null,'service_role')('restore_withdrawn_account',{p_user_id:id,p_session_id:fresh}),/7일/);
+  const until=(await rpc(null,'service_role')('request_account_withdrawal',{p_user_id:id})).restoreUntil;assert(Date.parse(until)<=Date.now());
+  await assert.rejects(()=>actor(B,'authenticated',tx=>tx.query('select private.purge_expired_accounts()')),/permission denied/);
+  await assert.rejects(()=>rpc(null,'service_role')('request_account_withdrawal',{p_user_id:MASTER}),/마스터/);
+  await db.query("insert into private.ai_usage(user_id,day,calls) values($1,(now() at time zone 'Asia/Seoul')::date-30,1) on conflict do nothing",[B]);
+  await db.query("insert into private.ai_requests(user_id,created_at,state) values($1,now()-interval '4 days','failed')",[B]);
+  const purged=(await db.query<any>('select private.purge_expired_accounts() value')).rows[0].value;assert.equal(purged.accounts,1);assert(purged.usage>=1);assert(purged.requests>=1);
+  for(const [table,key]of [['auth.users','id'],['auth.sessions','user_id'],['public.profiles','id'],['public.food_preferences','user_id'],['public.recommendation_history','user_id'],['private.account_lifecycle','user_id']])assert.equal((await db.query<any>(`select count(*) n from ${table} where ${key}=$1`,[id])).rows[0].n,0,table);
+  const kept=(await db.query<any>('select user_id,payload,message,status from requests where id=$1',[request])).rows[0];assert.equal(kept.user_id,null);assert.deepEqual(kept.payload,{});assert.equal(kept.message,'');assert.equal(kept.status,'rejected');
+  assert.equal((await rpc(id)('account_recovery_status')).missing,true);assert.equal(await rpc(id)('is_active_member'),false);
+  assert.equal((await db.query<any>('select count(*) n from auth.users where id=$1',[MASTER])).rows[0].n,1);
 });

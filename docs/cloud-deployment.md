@@ -118,9 +118,17 @@ on conflict(user_id) do nothing;
 
 고객센터는 공개 FAQ와 회원별 비공개 1:1 문의로 나뉩니다. 본인과 관리자만 문의를 볼 수 있고 답변은 DB에서 현재 관리자 권한을 검사합니다. 문의 본문·답변을 HTML로 렌더링하지 않으며 변경 이력에는 본문을 복제하지 않습니다. 음식점 수정·등록·홍보는 기존 문의·신청 기능을 계속 사용합니다.
 
-비밀번호 변경은 현재 비밀번호 재인증과 새 비밀번호 일치 확인을 거칩니다. 탈퇴 함수는 검증된 JWT의 본인 ID만 받고 현재 비밀번호를 별도로 확인한 뒤 모든 갱신 세션을 종료하고 Auth 계정을 삭제합니다. 계정·취향·찜·추천 및 방문 기록·게시글·고객센터 문의는 삭제하고 음식점 신청의 회원 연결과 자유 입력 메시지는 제거합니다. 반영된 음식점과 익명 처리 이력은 유지합니다. 마스터와 마지막 관리자 탈퇴는 함수와 DB 트리거 양쪽에서 차단합니다. 탈퇴 테스트는 로컬 대역의 가짜 계정만 이용합니다.
+비밀번호 변경은 현재 비밀번호 재인증과 새 비밀번호 일치 확인을 거칩니다. 탈퇴는 `delete-account` 함수가 검증한 본인 JWT와 현재 비밀번호로만 신청합니다. 구버전 클라이언트 호환 이름을 유지하지만 즉시 Auth 계정을 삭제하지 않으며 `private.account_lifecycle`에 **7일**의 복원 기한을 저장합니다. 재시도해도 기한을 늘리지 않습니다. 탈퇴 상태에서는 회원 기능을 차단하고 공개 프로필·게시글을 숨깁니다. 7일 이내 로그인 후 비밀번호를 다시 확인하면 같은 회원키와 취향·찜·기록·게시글을 복원합니다. 기한이 지난 뒤에는 자동 삭제 대기 중이어도 복원을 거부합니다. 이미 영구 삭제한 계정은 복원하지 못합니다.
+
+탈퇴·복원 상태 변경 RPC는 service-role에만 허용하고 브라우저는 실행하지 못합니다. 기존 소유권 RLS에 제한 정책을 추가하고 definer RPC의 쓰기에도 활성 계정 검사를 적용합니다. 탈퇴 도중 끝난 AI 요청은 성공 정산하지 않습니다. 탈퇴 시 갱신 세션을 모두 종료하고, 복원 시에는 다른 세션을 종료한 뒤 방금 비밀번호로 확인한 세션만 반환합니다. 복원 이력이 있는 계정은 `auth.sessions`의 실제 `session_id`도 검사하므로 만료 전 옛 JWT가 다시 권한을 얻지 못합니다. 마스터와 마지막 관리자는 계속 보호합니다.
+
+회원 데이터는 회원 이용 기간과 탈퇴 신청 후 7일까지 보관합니다. AI 사용량은 한국 날짜 기준 최근 30일, 처리 예약은 생성 후 3일까지 보관하며 계정 영구 삭제 시 더 일찍 제거합니다. `pg_cron`의 `bob-pick-retention-cleanup`이 5분마다 서버 전용 `private.purge_expired_accounts()`를 실행합니다. 만료 계정을 잠근 뒤 Auth 사용자와 연결 정보를 삭제하고, 미처리 음식점 신청은 반려하고 개인 입력·원문·메모를 제거합니다. 반영된 음식점 정보와 익명 처리 이력은 유지합니다. 한 번에 만료 계정 최대 200개를 처리하며 다음 실행에서 나머지를 처리합니다. 실패한 작업은 Supabase Cron 이력에서 확인하고 다음 실행에서 재시도합니다. 외부 제공자 로그·백업의 보관 조건은 해당 제공자 정책을 따릅니다.
+
+자동 파기 함수는 공개 API가 아니고 anon·authenticated·service-role의 직접 실행을 차단합니다. DB 소유자 역할의 Cron만 실행하며 API 비밀 키를 Cron에 저장하지 않습니다. 실제 회원을 테스트로 탈퇴·삭제하지 않습니다. 로컬 테스트 DB는 Auth와 세션 테이블, RLS 및 같은 상태 변경 함수를 사용합니다. 실제 이메일 전달과 외부 Auth 전송 자체는 로컬 대역의 검증 범위 밖입니다.
 
 ## 네이버 지도
++공개 게시글·프로필의 RLS는 `account_content_visible(UUID)`로 공개 가능 여부만 확인합니다. 이 함수는 이메일·탈퇴 시각·회원 정보를 반환하지 않으며 존재하지 않는 UUID도 공개 가능 값으로 처리합니다. [Public Can Execute SECURITY DEFINER Function](https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable) 안내는 공개 RLS에서 이 제한된 definer 함수를 사용하는 의도된 설정입니다. 탈퇴·복원 상태와 처리 시각은 본인 조회 또는 서버 전용 RPC에만 제공합니다.
+
 
 Naver Cloud Maps 애플리케이션의 Web 서비스 URL에 운영 origin을 추가하고 공개 client ID를 `VITE_NAVER_MAP_CLIENT_ID`에 설정합니다. 네이버 길찾기는 별도로 사용할 수 있으며 출발지에 임의 위치를 넣지 않습니다.
 
@@ -132,6 +140,6 @@ Naver Cloud Maps 애플리케이션의 Web 서비스 URL에 운영 origin을 추
 
 GitHub Actions는 웹 빌드·Edge 타입 검사·PostgreSQL/RLS·브라우저 테스트를 수행합니다. 로컬 대역 테스트와 실제 운영 메일·Gemini 모델 권한·지도 인증의 검증은 구분합니다. 실제 계정으로 가입·찜 재접속·신청·관리자 처리·AI 추천·휴대폰 접속을 확인합니다.
 
-2026-11-12 추가 검증은 PostgreSQL/RLS·추천·정산·탈퇴·길찾기 38개와 브라우저 29개입니다. 가입 후 안내의 저장·건너뛰기·이메일 확인 후 안내·계정 간 접근 차단·기존 취향 보존·모바일 바로가기를 포함합니다. 브라우저의 새 AI·탈퇴 경로는 운영과 같은 공유 처리 함수를 호출하며 외부 Gemini와 Auth 전송만 로컬 대역으로 대체합니다. 운영에서는 마이그레이션 11개, AI v4·탈퇴 v1 배포와 음식점/메뉴 수, 정산의 서버 전용 권한, 취향·기록·답변의 직접 쓰기 차단을 별도로 확인합니다.
+2026-11-12 추가 검증은 PostgreSQL/RLS·추천·정산·탈퇴·길찾기 40개와 브라우저 29개입니다. 가입 후 안내의 저장·건너뛰기·이메일 확인 후 안내·계정 간 접근 차단·기존 취향 보존·모바일 바로가기를 포함합니다. 브라우저의 새 AI·탈퇴 경로는 운영과 같은 공유 처리 함수를 호출하며 외부 Gemini와 Auth 전송만 로컬 대역으로 대체합니다. 운영에서는 마이그레이션 12개, AI v4·탈퇴 v2 배포와 음식점/메뉴 수, 정산의 서버 전용 권한, 취향·기록·답변의 직접 쓰기 차단을 별도로 확인합니다.
 
 Supabase 보안 점검의 [인증 사용자 definer 함수 안내](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable)는 본인·관리자 검사를 거치는 의도된 API입니다. [정책 없는 RLS](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy)는 private 내부 테이블의 직접 접근 차단이며, 새 인덱스의 [미사용 안내](https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index)는 아직 사용 이력이 없다는 의미입니다. 기존 Auth의 [유출 비밀번호 검사 설정 안내](https://supabase.com/docs/guides/database/database-linter?lint=auth_leaked_password_protection)는 이번 배포에서 변경하지 않습니다.

@@ -1,23 +1,32 @@
 import type {User} from '@supabase/supabase-js';
 import {client,db,rpc} from './supabase';
-import {action,el,input,message} from './ui';
+import {action,el,input,message,date} from './ui';
 export let user:User|null=null;
 export let admin=false;
+export let accountRecovery:{userId:string;canRestore:boolean;restoreUntil:string}|null=null;
 let mode='login',recovery=false,identityVersion=0;
 export function requireUser(){if(!user){location.hash='account';throw Error('로그인 후 이용해 주세요.');}return user;}
 export async function refreshIdentity(){
   const mine=++identityVersion;
   const {data:{session},error}=await client().auth.getSession();if(error)throw error;
-  const who=session?.user??null;let isAdmin=false,nickname='';
+  let who=session?.user??null;let isAdmin=false,nickname='',pending:typeof accountRecovery=null;
   if(who){
+    const state=await rpc<{pending:boolean;missing:boolean;active:boolean;canRestore:boolean;restoreUntil:string}>('account_recovery_status');
+    if(mine!==identityVersion)return;
+    if(state.missing||(!state.pending&&!state.active)){await client().auth.signOut({scope:'local'});who=null;}
+    else if(state.pending)pending={userId:who.id,canRestore:state.canRestore,restoreUntil:state.restoreUntil};
+  }
+  if(who&&!pending){
     try{isAdmin=await rpc<boolean>('is_admin');}catch{isAdmin=false;}
     const {data}=await client().from('profiles').select('nickname').eq('id',who.id).single();nickname=data?.nickname??'';
   }
   if(mine!==identityVersion)return;
-  user=who;admin=isAdmin;
-  el('account-nav-label').textContent=user?'내 정보':'로그인';el('admin-link').hidden=!admin;
-  el('auth-box').hidden=!!user&&!recovery;el('member-box').hidden=!user||recovery;
-  el('account-heading').textContent=user?'내 정보':'반가워요, 밥친구!';
+  user=pending?null:who;admin=isAdmin;accountRecovery=pending;
+  el('account-nav-label').textContent=pending?'계정 복원':user?'내 정보':'로그인';el('admin-link').hidden=!admin;
+  el('auth-box').hidden=!recovery&&(!!pending||!!user);el('member-box').hidden=!user||recovery;
+  el('account-recovery-box').hidden=!pending||recovery;el('account-restore-form').hidden=!pending?.canRestore;
+  if(pending){message('account-recovery-email',who?.email??'');message('account-recovery-title',pending.canRestore?'다시 함께할까요?':'복원 기간이 지났어요');message('account-recovery-detail',pending.canRestore?'복원하면 취향·찜·추천 및 방문 기록·작성한 글을 다시 이용할 수 있어요.':'개인정보를 영구 삭제한 뒤에는 계정을 복원할 수 없습니다.');message('account-recovery-deadline',pending.canRestore?date(pending.restoreUntil)+'까지 복원할 수 있어요.':'복원 가능한 7일이 지나 영구 삭제를 처리하고 있습니다.');}
+  el('account-heading').textContent=pending?'탈퇴한 계정입니다':user?'내 정보':'반가워요, 밥친구!';
   if(user){
     el<HTMLInputElement>('profile-nickname').value=nickname;
     message('member-name',(nickname||'밥친구')+'님');
@@ -56,7 +65,7 @@ export async function initAuth(){
         message('auth-status','가입한 이메일이면 비밀번호 재설정 메일이 발송됩니다.');
       }else{
         const {error}=await client().auth.updateUser({password});if(error)throw error;
-        recovery=false;history.replaceState(null,'',location.pathname+'#account');setMode('login');await refreshIdentity();message('member-status','비밀번호를 변경했습니다.');
+        recovery=false;history.replaceState(null,'',location.pathname+'#account');setMode('login');await refreshIdentity();message(accountRecovery?'account-restore-status':'member-status',accountRecovery?'비밀번호를 변경했습니다. 새 비밀번호로 계정을 복원해 주세요.':'비밀번호를 변경했습니다.');
       }
       el<HTMLInputElement>('auth-password').value='';el<HTMLInputElement>('auth-password-confirm').value='';
     });
@@ -71,13 +80,24 @@ export async function initAuth(){
   };
   el<HTMLButtonElement>('logout').onclick=()=>void action(el('logout'),'member-status',async()=>{
     const {error}=await client().auth.signOut();if(error)throw error;
-    el<HTMLButtonElement>('chat-reset').click();setMode('login');await refreshIdentity();message('member-status','로그아웃했습니다.');
+    setMode('login');await refreshIdentity();message('member-status','로그아웃했습니다.');
   });
+  el<HTMLButtonElement>('account-recovery-logout').onclick=()=>void action(el('account-recovery-logout'),'account-restore-status',async()=>{await client().auth.signOut({scope:'local'});await refreshIdentity();});
+  el<HTMLFormElement>('account-restore-form').onsubmit=event=>{
+    event.preventDefault();void action(el('account-restore'),'account-restore-status',async()=>{
+      const pending=accountRecovery;if(!pending?.canRestore)throw Error('복원 가능한 7일이 지났습니다.');
+      const {data,error}=await client().functions.invoke('delete-account',{body:{action:'restore',confirm:true,expectedUserId:pending.userId,password:el<HTMLInputElement>('account-restore-password').value}});
+      if(error){let text='복원하지 못했습니다. 잠시 후 다시 시도해 주세요.';if(error.context instanceof Response)try{text=(await error.context.json()).error??text;}catch{}throw Error(text);}
+      if(!data?.restored||!data.session)throw Error('복원 결과를 확인하지 못했습니다.');
+      const updated=await client().auth.setSession(data.session);if(updated.error)throw updated.error;
+      el<HTMLFormElement>('account-restore-form').reset();await refreshIdentity();message('member-status','계정을 복원했습니다.');location.hash='account';
+    });
+  };
   setMode('login');
   if(!db){message('auth-status','Supabase 연결 설정이 필요합니다.');return;}
   db.auth.onAuthStateChange((event,session)=>{
-    const previous=user?.id;user=session?.user??null;
-    if(!user||previous!==user.id){identityVersion++;admin=false;el('admin-link').hidden=true;el('admin-content').hidden=true;window.dispatchEvent(new Event('identity-changed'));}
+    const previous=user?.id??accountRecovery?.userId,incoming=session?.user;
+    if(!incoming||previous!==incoming.id){identityVersion++;user=null;accountRecovery=null;admin=false;el('admin-link').hidden=true;el('admin-content').hidden=true;if(previous)el<HTMLButtonElement>('chat-reset').click();window.dispatchEvent(new Event('identity-changed'));el<HTMLFormElement>('account-restore-form').reset();}
     if(event==='SIGNED_OUT'){
       setMode('login');for(const id of ['auth-email','auth-password','auth-password-confirm','auth-nickname'])el<HTMLInputElement>(id).value='';
     }
@@ -87,4 +107,5 @@ export async function initAuth(){
   });
   if(new URLSearchParams(location.search).get('recovery')==='1')setMode('password');
   await refreshIdentity();
+  window.addEventListener('focus',()=>void refreshIdentity().catch(()=>{}));
 }

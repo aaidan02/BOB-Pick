@@ -1,6 +1,6 @@
 import {accountMarkup,initAccount,loadAccountOverview} from './account';
 import {supportMarkup,initSupport,loadSupport,loadAdminSupport} from './support';
-import {initAuth,user,admin} from './auth';
+import {initAuth,user,admin,accountRecovery} from './auth';
 import {initCommunity,loadPosts} from './community';
 import {initFavorites,loadFavorites} from './favorites';
 import {initRequests,loadRequests,loadAdmin} from './requests';
@@ -25,6 +25,7 @@ export async function initPortal(){
       </form><button type="button" data-auth-mode="reset" class="text-button">비밀번호를 잊으셨나요?</button><p id="auth-status" class="form-status" role="status"></p>
     </div>
     <div id="member-box" hidden>${accountMarkup()}</div>
+    <div id="account-recovery-box" class="surface account-surface" hidden><p class="section-eyebrow">계정 복원</p><h2 id="account-recovery-title">다시 함께할까요?</h2><p id="account-recovery-email" class="helper"></p><p id="account-recovery-deadline"></p><p id="account-recovery-detail" class="helper">복원하면 취향·찜·추천 및 방문 기록·작성한 글을 다시 이용할 수 있어요.</p><form id="account-restore-form" class="portal-form"><label>현재 비밀번호<input id="account-restore-password" type="password" autocomplete="current-password" maxlength="128" required></label><button id="account-restore">탈퇴 취소하고 계정 복원</button><p id="account-restore-status" class="form-status" role="status"></p></form><button id="account-recovery-logout" type="button" class="text-button">로그아웃</button></div>
   </section>
   <section id="support-panel" class="service-panel" hidden aria-labelledby="support-heading">${supportMarkup()}</section>
   <section id="favorites-panel" class="service-panel" hidden aria-labelledby="favorites-heading">
@@ -94,8 +95,9 @@ export async function initPortal(){
   initAccount();initSupport();
   initCommunity();initFavorites();initRequests();initAdminAccounts();
   function route(){
-    const page=location.hash.slice(1);
+    let page=location.hash.slice(1);
     if(isLegalPage(page)){showLegalPage(page);return;}
+    if(accountRecovery&&page!=='account'){history.replaceState(null,'','#account');page='account';}
     el('legal-view').hidden=true;
     const service=['account','favorites','community','requests','admin','support'].includes(page);
     const returningHome=el('home-view').hidden&&!service;
@@ -116,6 +118,7 @@ export async function initPortal(){
   }
   window.addEventListener('hashchange',route);
   window.addEventListener('identity-changed',()=>{
+    if(accountRecovery)route();
     el('request-login').hidden=!!user;el('request-form').hidden=!user;
     el('request-reload').hidden=!user;el('admin-content').hidden=!admin;
     if(location.hash==='#admin'){void loadAdmin();void loadAdminSupport();}

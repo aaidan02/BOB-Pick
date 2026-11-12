@@ -2,6 +2,7 @@
 .bob-theme #member-box{grid-column:1/-1;width:100%;max-width:none}
 .bob-theme .member-summary .member-heading{margin-bottom:22px}
 .bob-theme #member-email{margin:5px 0 0;overflow-wrap:anywhere}
+.bob-theme #account-recovery-email{overflow-wrap:anywhere}
 .bob-theme .account-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
 .bob-theme .account-metrics :is(a,button){display:flex;flex-direction:column;align-items:flex-start;gap:7px;border:1px solid #e7e6d9;border-radius:17px;background:#f7f7ee;padding:17px 20px;color:#5c6850;font-size:12px;min-width:0;width:100%;text-align:left}
 .bob-theme .account-metrics strong{font-size:25px;color:#35452d}

@@ -20,7 +20,7 @@ export function accountMarkup(){return `
   <section id="account-info" role="tabpanel" aria-labelledby="account-tab-info">
     <div class="surface"><h2>내 정보</h2><form id="profile-form" class="portal-form"><label>내 닉네임<input id="profile-nickname" minlength="2" maxlength="40" required></label><button id="profile-save" class="secondary">닉네임 저장</button></form><p id="member-status" class="form-status" role="status"></p></div>
     <details class="surface account-details"><summary>비밀번호 변경</summary><form id="password-form" class="portal-form"><label>현재 비밀번호<input id="password-current" type="password" autocomplete="current-password" required maxlength="128"></label><label>새 비밀번호<input id="password-new" type="password" autocomplete="new-password" minlength="8" maxlength="128" required placeholder="8자 이상"></label><label>새 비밀번호 확인<input id="password-confirm" type="password" autocomplete="new-password" minlength="8" maxlength="128" required></label><button id="password-save">비밀번호 변경</button><p id="password-status" class="form-status" role="status"></p></form></details>
-    <details class="surface account-details account-danger"><summary>회원 탈퇴</summary><p class="helper">계정·취향·찜·추천 및 방문 기록·작성한 글·고객센터 문의가 삭제됩니다. 반영된 음식점 정보와 익명 처리 이력은 유지됩니다.</p><p id="account-delete-reason" class="form-status" role="status"></p><form id="account-delete-form" class="portal-form" hidden><label>현재 비밀번호<input id="account-delete-password" type="password" autocomplete="current-password" required maxlength="128"></label><label class="checkbox"><input id="account-delete-confirm" type="checkbox" required>위 내용을 확인했고 탈퇴하겠습니다.</label><button id="account-delete" class="danger">회원 탈퇴</button><p id="account-delete-status" class="form-status" role="status"></p></form></details>
+    <details class="surface account-details account-danger"><summary>회원 탈퇴</summary><p class="helper">탈퇴 후 7일 동안 기존 이메일·비밀번호로 로그인해 복원할 수 있어요. 그동안 회원 기능을 이용할 수 없고 게시글은 숨겨집니다. 7일이 지나면 계정·취향·찜·기록·작성한 글·고객센터 문의를 영구 삭제하며 복원할 수 없습니다. 반영된 음식점 정보와 익명 처리 이력은 유지됩니다.</p><p id="account-delete-reason" class="form-status" role="status"></p><form id="account-delete-form" class="portal-form" hidden><label>현재 비밀번호<input id="account-delete-password" type="password" autocomplete="current-password" required maxlength="128"></label><label class="checkbox"><input id="account-delete-confirm" type="checkbox" required>7일 후 영구 삭제되는 것을 확인했고 탈퇴하겠습니다.</label><button id="account-delete" class="danger">회원 탈퇴</button><p id="account-delete-status" class="form-status" role="status"></p></form></details>
   </section>
   <section id="account-taste" role="tabpanel" aria-labelledby="account-tab-taste" hidden><form id="taste-form" class="surface portal-form"><h2>내 취향 설정</h2><div id="member-taste">${preferenceMarkup('member-taste')}</div><div class="button-row"><button id="taste-save">취향 저장</button><button id="taste-reset" type="button" class="secondary">기본값으로</button></div><p id="taste-status" class="form-status" role="status"></p></form></section>
   <section id="account-history" role="tabpanel" aria-labelledby="account-tab-history" hidden><div class="surface"><div class="section-head"><h2>추천·방문 기록</h2><button id="history-clear" type="button" class="secondary compact">기록 삭제</button></div><div class="button-row"><label class="grow"><span class="sr-only">기록 종류</span><select id="history-kind"><option value="all">모든 추천 기록</option><option value="visited">다녀온 가게</option></select></label><button id="history-reload" type="button" class="secondary">새로고침</button></div><p id="history-status" class="empty-state" role="status"></p><div id="history-list" class="history-list"></div><button id="history-more" type="button" class="secondary" hidden>기록 더 보기</button></div></section>
@@ -48,7 +48,7 @@ async function loadPreferences(force=false){
     if(data.onboardingComplete===false&&!el('member-box').hidden&&!dialog.open&&!onboardingBusy){
       renderPreferenceForm('onboarding-taste',data.settings??emptyPreferences());message('onboarding-status','');
       dialog.showModal();dialog.scrollTop=0;el('taste-onboarding-heading').focus({preventScroll:true});
-    }else if(data.onboardingComplete===true&&dialog.open)dialog.close();
+    }else if(data.onboardingComplete===true&&dialog.open&&!onboardingBusy)dialog.close();
     const deletion=await rpc<{allowed:boolean;reason?:string}>('account_deletion_status');
     if(mine!==version||user?.id!==who)return;
     el('account-delete-form').hidden=!deletion.allowed;message('account-delete-reason',deletion.reason??'');
@@ -91,8 +91,8 @@ export function initAccount(){
       if(save)await rpc('save_food_preferences',{p_settings:readPreferenceForm('onboarding-taste'),p_user_id:who});
       else await rpc('complete_food_preference_onboarding',{p_user_id:who});
       if(user?.id!==who||mine!==onboardingAttempt)return;
-      el<HTMLDialogElement>('taste-onboarding').close();await loadPreferences(true);
-      if(user?.id===who&&mine===onboardingAttempt)location.hash='filters';
+      await loadPreferences(true);
+      if(user?.id===who&&mine===onboardingAttempt){location.hash='filters';el<HTMLDialogElement>('taste-onboarding').close();}
     }catch(error){if(user?.id===who&&mine===onboardingAttempt)message('onboarding-status',friendly(error));}
     finally{if(mine===onboardingAttempt){onboardingBusy=false;el<HTMLButtonElement>('onboarding-save').disabled=el<HTMLButtonElement>('onboarding-skip').disabled=false;if(user?.id===who)markPreferencesLoading(false);}}
   }
@@ -130,10 +130,10 @@ export function initAccount(){
   (el('account-delete-form') as HTMLFormElement).onsubmit=event=>{
     event.preventDefault();if(!(el('account-delete-confirm') as HTMLInputElement).checked)return;
     void action(el('account-delete'),'account-delete-status',async()=>{
-      const who=requireUser(),{data,error}=await client().functions.invoke('delete-account',{body:{password:(el('account-delete-password') as HTMLInputElement).value,confirm:true,expectedUserId:who.id}});
+      const who=requireUser(),{data,error}=await client().functions.invoke('delete-account',{body:{action:'withdraw',retentionDays:7,password:(el('account-delete-password') as HTMLInputElement).value,confirm:true,expectedUserId:who.id}});
       if(error){let text='탈퇴하지 못했습니다. 잠시 후 다시 시도해 주세요.';if(error.context instanceof Response)try{text=(await error.context.json()).error??text;}catch{}throw Error(text);}
-      if(!data?.deleted)throw Error('탈퇴 결과를 확인하지 못했습니다.');
-      await client().auth.signOut({scope:'local'});await refreshIdentity();(el('account-delete-form') as HTMLFormElement).reset();message('auth-status','회원 탈퇴가 완료되었습니다.');location.hash='account';
+      if(!data?.withdrawn)throw Error('탈퇴 결과를 확인하지 못했습니다.');
+      await client().auth.signOut({scope:'local'});await refreshIdentity();(el('account-delete-form') as HTMLFormElement).reset();message('auth-status','탈퇴했습니다. 7일 안에 로그인하면 계정을 복원할 수 있어요.');location.hash='account';
     });
   };
   window.addEventListener('identity-changed',()=>{

@@ -12,6 +12,7 @@ export function supportMarkup(){return `
     <details><summary>최근에 다녀온 가게를 빼고 싶어요.</summary><p>내 정보의 추천·방문 기록에서 ‘다녀왔어요’를 표시하고, 내 취향에서 제외 기간을 선택하세요. 추천만 받은 가게는 방문한 것으로 처리하지 않아요.</p></details>
     <details><summary>가게 고정과 메뉴 찜은 다른가요?</summary><p>‘마음에 들어요’는 현재 추천 카드를 고정합니다. ‘메뉴 찜하기’는 계정에 저장해 다음에도 볼 수 있어요.</p></details>
     <details><summary>비밀번호 변경이나 회원 탈퇴는 어디에서 하나요?</summary><p>로그인한 뒤 내 정보에서 변경할 수 있습니다. 현재 비밀번호를 잊었다면 로그인 화면에서 재설정 메일을 요청하세요.</p></details>
+    <details><summary>탈퇴한 계정을 복원할 수 있나요?</summary><p>탈퇴 후 7일 안에 기존 이메일·비밀번호로 로그인하면 복원 화면이 열립니다. 비밀번호를 다시 확인하면 취향·찜·기록·작성한 글을 복원합니다. 7일이 지나거나 이미 영구 삭제된 계정은 복원할 수 없습니다.</p></details>
   </section>
   <section class="surface" aria-labelledby="support-write-heading"><h2 id="support-write-heading">1:1 문의</h2><p id="support-login" class="empty-state">로그인하면 문의를 남기고 답변을 확인할 수 있어요. <a href="#account">로그인하기 →</a></p>
     <form id="support-form" class="portal-form" hidden><label>문의 종류<select id="support-category"><option value="general">일반 문의</option><option value="account">계정·개인정보</option><option value="recommendation">추천·이용 횟수</option><option value="bug">오류 신고</option></select></label><label>제목<input id="support-subject" maxlength="120" required placeholder="어떤 도움이 필요한가요?"></label><label>내용<textarea id="support-body" rows="5" maxlength="5000" required placeholder="문제 상황을 알려주세요. 비밀번호나 API 키는 적지 마세요."></textarea></label><button id="support-submit">문의 보내기</button><p id="support-status" class="form-status" role="status"></p></form>

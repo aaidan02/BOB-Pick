@@ -6,7 +6,9 @@ import {PGlite} from '@electric-sql/pglite';
 import {readFileSync,readdirSync} from 'node:fs';
 const db=new PGlite();
 await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create table auth.users(id uuid primary key,email varchar(255),raw_user_meta_data jsonb default '{}',email_confirmed_at timestamptz,deleted_at timestamptz,banned_until timestamptz,is_anonymous boolean default false);
-create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+create table auth.sessions(id uuid primary key,user_id uuid references auth.users(id) on delete cascade,not_after timestamptz);
+    create function auth.jwt() returns jsonb language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb$$;
+    create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
 grant usage on schema public,auth to anon,authenticated;grant execute on function auth.uid() to anon,authenticated;`);
 for(const file of readdirSync('supabase/migrations').sort())await db.exec(readFileSync('supabase/migrations/'+file,'utf8'));
 await db.exec(readFileSync('supabase/seed.sql','utf8'));
@@ -19,33 +21,35 @@ for(const [suffix,email] of [['1','a@example.test'],['2','b@example.test'],['3',
 }
 // These seed accounts predate the post-signup preference step.
 await db.exec('update public.food_preferences set onboarding_completed_at=now()');
-function session(user:any){
-  const token=Buffer.from(JSON.stringify({alg:'HS256',typ:'JWT'})).toString('base64url')+'.'+Buffer.from(JSON.stringify({sub:user.id,aud:'authenticated',role:'authenticated',exp:Math.floor(Date.now()/1000)+3600})).toString('base64url')+'.test-only-signature';
+async function session(user:any){
+  const sessionId=crypto.randomUUID();await db.query('insert into auth.sessions(id,user_id) values($1,$2)',[sessionId,user.id]);
+  const token=Buffer.from(JSON.stringify({alg:'HS256',typ:'JWT'})).toString('base64url')+'.'+Buffer.from(JSON.stringify({sub:user.id,session_id:sessionId,aud:'authenticated',role:'authenticated',exp:Math.floor(Date.now()/1000)+3600})).toString('base64url')+'.test-only-signature';
   tokens.set(token,user);return {access_token:token,refresh_token:'test-refresh-'+user.id,expires_in:3600,expires_at:Math.floor(Date.now()/1000)+3600,token_type:'bearer',user};
 }
-const rpcArgs:Record<string,string[]>={catalog_options:[],is_admin:[],recommend_count:['p_filter'],recommend_candidates:['p_filter'],pick_restaurants:['p_filter','p_size','p_locked','p_prior'],search_posts:['p_query','p_offset','p_mine'],submit_request:['p_kind','p_restaurant_id','p_payload','p_message'],review_request:['p_request_id','p_decision','p_note'],consume_ai_quota:[],ai_quota_status:[],admin_list_accounts:[],admin_search_accounts:['p_query'],admin_set_membership:['p_user_id','p_enabled'],begin_ai_request:[],complete_ai_request:['p_request_id','p_success'],save_food_preferences:['p_settings','p_user_id'],complete_food_preference_onboarding:['p_user_id'],my_food_preferences:[],my_account_overview:[],account_deletion_status:[],save_recommendation_history:['p_event_id','p_source','p_filter','p_items','p_user_id'],set_history_visit:['p_id','p_visited'],reply_support_ticket:['p_id','p_reply']};
+const rpcArgs:Record<string,string[]>={catalog_options:[],is_admin:[],recommend_count:['p_filter'],recommend_candidates:['p_filter'],pick_restaurants:['p_filter','p_size','p_locked','p_prior'],search_posts:['p_query','p_offset','p_mine'],submit_request:['p_kind','p_restaurant_id','p_payload','p_message'],review_request:['p_request_id','p_decision','p_note'],consume_ai_quota:[],ai_quota_status:[],account_recovery_status:[],admin_list_accounts:[],admin_search_accounts:['p_query'],admin_set_membership:['p_user_id','p_enabled'],begin_ai_request:[],complete_ai_request:['p_request_id','p_success'],save_food_preferences:['p_settings','p_user_id'],complete_food_preference_onboarding:['p_user_id'],my_food_preferences:[],my_account_overview:[],account_deletion_status:[],save_recommendation_history:['p_event_id','p_source','p_filter','p_items','p_user_id'],set_history_visit:['p_id','p_visited'],reply_support_ticket:['p_id','p_reply']};
 createServer(async(req,res)=>{
   const origin=req.headers.origin??'*';res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Access-Control-Allow-Headers','authorization,apikey,content-type,x-client-info,prefer,range,range-unit,x-supabase-api-version,content-profile,accept-profile,x-retry-count');res.setHeader('Access-Control-Allow-Methods','GET,POST,PATCH,DELETE,OPTIONS');
   const send=(status:number,data:any)=>{res.writeHead(status,{'Content-Type':'application/json'});res.end(data==null?'':JSON.stringify(data));};
   if(req.method==='OPTIONS'){send(204,null);return;}
-  const url=new URL(req.url!,'http://localhost'),user=tokens.get((req.headers.authorization??'').replace(/^Bearer /,''));
+  const token=(req.headers.authorization??'').replace(/^Bearer /,''),url=new URL(req.url!,'http://localhost'),user=tokens.get(token),claims=user?JSON.parse(Buffer.from(token.split('.')[1],'base64url').toString()):{};
   let raw='';for await(const chunk of req)raw+=chunk;const body=raw?JSON.parse(raw):{};
   try{
     if(url.pathname==='/health'){send(200,{ok:true});return;}
     if(url.pathname.startsWith('/auth/v1/')){
-      if(url.pathname.endsWith('/token')){const found=users.get(body.email);if(!found||body.password!==passwords.get(body.email)){send(400,{message:'Invalid login credentials',error_description:'Invalid login credentials'});return;}send(200,session(found));return;}
+      if(url.pathname.endsWith('/token')){const found=users.get(body.email);if(!found||body.password!==passwords.get(body.email)){send(400,{message:'Invalid login credentials',error_description:'Invalid login credentials'});return;}send(200,await session(found));return;}
       if(url.pathname.endsWith('/signup')){
         const id=crypto.randomUUID(),created={id,email:body.email,aud:'authenticated',role:'authenticated',user_metadata:body.data??{},app_metadata:{provider:'email'},created_at:new Date().toISOString()};
-        await db.query('insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3)',[id,body.email,body.data??{}]);users.set(body.email,created);passwords.set(body.email,body.password);send(200,session(created));return;
+        await db.query('insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3)',[id,body.email,body.data??{}]);users.set(body.email,created);passwords.set(body.email,body.password);send(200,await session(created));return;
       }
       if(url.pathname.endsWith('/user')&&user&&['PUT','PATCH'].includes(req.method!)){if(body.password)passwords.set(user.email,body.password);send(200,user);return;}
       if(url.pathname.endsWith('/user')){send(user?200:401,user??{message:'Not logged in'});return;}
+      if(url.pathname.endsWith('/logout')&&user){const scope=url.searchParams.get('scope')??'global';await db.query("delete from auth.sessions where user_id=$1 and ($2='global' or ($2='local' and id=$3) or ($2='others' and id<>$3))",[user.id,scope,claims.session_id]);}
       send(204,null);return;
     }
     if(url.pathname==='/functions/v1/ai-recommend'){
       if(!user){send(401,{error:'로그인 후 이용해 주세요.'});return;}
       const invoke=(role:string,actor:string|null)=>async(name:string,args:Record<string,unknown>={})=>db.transaction(async tx=>{
-        await tx.exec('set local role '+role);await tx.query("select set_config('request.jwt.claim.sub',$1,true)",[actor??'']);
+        await tx.exec('set local role '+role);await tx.query("select set_config('request.jwt.claim.sub',$1,true),set_config('request.jwt.claims',$2,true)",[actor??'',JSON.stringify(actor?claims:{})]);
         const keys=Object.keys(args);if(name==='recommend_candidates')return (await tx.query<any>(`select * from public.${name}(${keys.map((key,i)=>key+'=> $'+(i+1)).join(',')})`,Object.values(args))).rows;return (await tx.query<any>(`select public.${name}(${keys.map((key,i)=>key+'=> $'+(i+1)).join(',')}) value`,Object.values(args))).rows[0].value;
       });
       const call=invoke('authenticated',user.id);
@@ -71,11 +75,13 @@ createServer(async(req,res)=>{
     if(url.pathname==='/functions/v1/delete-account'){
       if(!user){send(401,{error:'로그인 후 이용해 주세요.'});return;}
       try{
+        const server=async(name:string,args:Record<string,unknown>)=>db.transaction(async tx=>{await tx.exec('set local role service_role');await tx.query("select set_config('request.jwt.claim.sub','',true)");const keys=Object.keys(args);return (await tx.query<any>(`select public.${name}(${keys.map((key,i)=>key+'=> $'+(i+1)).join(',')}) value`,Object.values(args))).rows[0].value;});
         const result=await deleteOwnAccount(body,user.id,{
           status:()=>db.transaction(async tx=>{await tx.exec('set local role authenticated');await tx.query("select set_config('request.jwt.claim.sub',$1,true)",[user.id]);return (await tx.query<any>('select public.account_deletion_status() status')).rows[0].status;}),
-          verifyPassword:async password=>password===passwords.get(user.email)?{userId:user.id,token:'verified-test-token'}:null,
-          signOutAll:async()=>{},
-          deleteUser:async id=>{await db.query('delete from auth.users where id=$1',[id]);users.delete(user.email);passwords.delete(user.email);for(const [token,record] of tokens)if(record.id===id)tokens.delete(token);}
+          verifyPassword:async password=>{if(password!==passwords.get(user.email))return null;const verified=await session(user),decoded=JSON.parse(Buffer.from(verified.access_token.split('.')[1],'base64url').toString());return {userId:user.id,token:verified.access_token,sessionId:decoded.session_id,session:{access_token:verified.access_token,refresh_token:verified.refresh_token}};},
+          revokeSessions:async(verified,scope)=>{const decoded=JSON.parse(Buffer.from(verified.split('.')[1],'base64url').toString());await db.query("delete from auth.sessions where user_id=$1 and ($2='global' or id<>$3)",[user.id,scope,decoded.session_id]);},
+          withdraw:async id=>server('request_account_withdrawal',{p_user_id:id}),
+          restore:async(id,sessionId)=>server('restore_withdrawn_account',{p_user_id:id,p_session_id:sessionId})
         });
         send(200,result);
       }catch(error){send(error instanceof AccountDeletionError?error.status:400,{error:(error as Error).message});}
@@ -83,7 +89,7 @@ createServer(async(req,res)=>{
     }
     const result=await db.transaction(async tx=>{
       await tx.exec('set local role '+(user?'authenticated':'anon'));
-      await tx.query("select set_config('request.jwt.claim.sub',$1,true)",[user?.id??'']);
+      await tx.query("select set_config('request.jwt.claim.sub',$1,true),set_config('request.jwt.claims',$2,true)",[user?.id??'',JSON.stringify(claims)]);
       const name=url.pathname.split('/').at(-1)!;
       if(url.pathname.startsWith('/rest/v1/rpc/')){
         const args=rpcArgs[name];if(!args)throw Error('Unknown test RPC');

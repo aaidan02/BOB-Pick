@@ -20,10 +20,17 @@ Deno.serve(async req=>{
     const service=createClient(url,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}});
     const result=await deleteOwnAccount(JSON.parse(text),user.id,{
       status:async()=>{const {data,error}=await client.rpc('account_deletion_status');if(error)throw error;return data;},
-      verifyPassword:async password=>{const {data,error}=await verifier.auth.signInWithPassword({email:user.email!,password});if(error||!data.user||!data.session)return null;return {userId:data.user.id,token:data.session.access_token};},
-      signOutAll:async token=>{const {error}=await service.auth.admin.signOut(token,'global');if(error)throw error;},
-      deleteUser:async id=>{const {error}=await service.auth.admin.deleteUser(id);if(error)throw error;}
+      verifyPassword:async password=>{
+        const {data,error}=await verifier.auth.signInWithPassword({email:user.email!,password});if(error||!data.user||!data.session)return null;
+        const token=data.session.access_token,claims=JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+        if(typeof claims.session_id!=='string')throw Error('본인 확인 세션을 확인하지 못했습니다.');
+        return {userId:data.user.id,token,sessionId:claims.session_id,session:{access_token:token,refresh_token:data.session.refresh_token}};
+      },
+      revokeSessions:async(token,scope)=>{const {error}=await service.auth.admin.signOut(token,scope);if(error)throw error;},
+      withdraw:async id=>{const {data,error}=await service.rpc('request_account_withdrawal',{p_user_id:id});if(error)throw error;return data;},
+      restore:async(id,sessionId)=>{const {data,error}=await service.rpc('restore_withdrawn_account',{p_user_id:id,p_session_id:sessionId});if(error)throw error;return data;}
     });
+    if('sessionsRevoked'in result&&!result.sessionsRevoked)console.error('withdrawal refresh-session revocation failed; database access remains blocked');
     return reply(200,result);
-  }catch(error){console.error('delete-account failed',error instanceof Error?error.name:'Error');return reply(error instanceof AccountDeletionError?error.status:400,{error:error instanceof AccountDeletionError?error.message:'탈퇴하지 못했습니다. 계정은 유지됩니다. 잠시 후 다시 시도해 주세요.'});}
+  }catch(error){console.error('delete-account failed',error instanceof Error?error.name:'Error');const message=error instanceof Error?error.message:String((error as {message?:string})?.message??'');return reply(error instanceof AccountDeletionError?error.status:400,{error:error instanceof AccountDeletionError||/^(복원 가능한|복원할 탈퇴|본인 확인)/.test(message)?message:'탈퇴·복원 요청을 처리하지 못했습니다. 다시 로그인한 뒤 시도해 주세요.'});}
 });
