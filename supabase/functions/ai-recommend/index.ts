@@ -35,13 +35,15 @@ Deno.serve(async req=>{
     const service=createClient(Deno.env.get('SUPABASE_URL')!,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}});
     const rpc=(db:typeof client)=>async(name:string,args:Record<string,unknown>={})=>{const {data,error}=await db.rpc(name,args);if(error)throw Object.assign(Error(error.message),{code:error.code});return data;};
     const call=rpc(client);
-    const result=await recommendWithAi(JSON.parse(body),{rpc:call,settle:rpc(service),generate,signal:req.signal,preferences:async()=>{
+    const result=await recommendWithAi(JSON.parse(body),{rpc:call,settle:rpc(service),generate,signal:req.signal,restaurantCatalog:async()=>{
+      const {data,error}=await client.from('restaurants').select('id,name,address,categories,latitude,longitude').eq('active',true).limit(10000);if(error)throw Error('음식점 이름을 불러오지 못했습니다.');return data??[];
+    },preferences:async()=>{
       const saved=await call('my_food_preferences');return saved.filter;
     }});
     return reply(200,result);
   }catch(error){
     const message=error instanceof Error?error.message:'';
     console.error('ai-recommend failed',error instanceof Error?error.name:'Error');
-    return reply(error instanceof AiRequestError?error.status:400,{error:/^(AI|방문|최소|대화|음식점|추천|요청|진행|오늘)/.test(message)?message:'추천 요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.'});
+    return reply(error instanceof AiRequestError?error.status:400,{error:/^(AI|방문|최소|대화|음식점|추천|요청|진행|오늘|거리|기준 장소)/.test(message)?message:'추천 요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.'});
   }
 });

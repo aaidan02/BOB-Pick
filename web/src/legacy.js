@@ -135,6 +135,7 @@ import {activePreferenceFilter,preferencesLoading} from './preference-state';
     showDetail(node.querySelector('.tags'),[data.get('_categories'),data.get('_menuForms')].filter(Boolean).join(' / '));
     showDetail(node.querySelector('.address'),[data.get('주소'),data.get('상세주소')].filter(Boolean).join(' '));
     showDetail(node.querySelector('.phone'),data.get('전화번호'));showDetail(node.querySelector('.hours'),data.get('운영시간정보'));
+    const meters=data.get('_distanceMeters');showDetail(node.querySelector('.nearby-distance'),meters!==null&&meters!==''?data.get('_nearbyName')+'에서 직선 '+Number(meters).toLocaleString('ko-KR')+'m':'');
     node.querySelector('.map-link').href=directionsUrl({name:data.get('음식점명'),address:data.get('주소'),latitude:data.get('위도')===''?null:Number(data.get('위도')),longitude:data.get('경도')===''?null:Number(data.get('경도'))});
 const save=node.querySelector('.save-menu');save.hidden=!data.get('_menuId');save.dataset.menuId=data.get('_menuId');window.dispatchEvent(new Event('recommendations-rendered'));
   }

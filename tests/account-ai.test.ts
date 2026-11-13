@@ -41,10 +41,10 @@ async function resetQuota(){await db.exec('delete from private.ai_requests;delet
 function plan(extra:Record<string,unknown>={}){return {intent:'recommendation',categories:['한식'],excludedCategories:[],forms:['국·탕·찌개'],excludedForms:[],menuTerms:[],excludedTerms:[],restaurantTerms:[],excludedRestaurants:[],minPrice:-1,maxPrice:10000,date:'',time:'',allHours:true,question:'',...extra};}
 function dependencies(id=A,options:{plan?:Record<string,unknown>;fail?:string;signal?:AbortSignal;afterDecision?:()=>void}={}){
   let calls=0;
-  const deps:AiDependencies={rpc:rpc(id),settle:rpc(null,'service_role'),signal:options.signal,preferences:async()=>(await rpc(id)('my_food_preferences')).filter,
+  const deps:AiDependencies={rpc:rpc(id),settle:rpc(null,'service_role'),signal:options.signal,restaurantCatalog:async()=>(await db.query<any>('select id,name,address,categories,latitude,longitude from restaurants where active')).rows,preferences:async()=>(await rpc(id)('my_food_preferences')).filter,
     generate:async(_prompt,data:any)=>{
       calls++;if(options.fail==='provider')throw Error('AI 연결에 실패했습니다.');
-      if(calls===1)return options.plan??plan();
+      if(!data.candidates)return options.plan??plan();
       options.afterDecision?.();
       return {picks:options.fail==='selection'?[{restaurantId:'fabricated',menuIndex:0}]:data.candidates.slice(0,data.wanted).map((r:any)=>({restaurantId:r[0],menuIndex:r[3][0]?.[0]??-1}))};
     }};
@@ -79,6 +79,38 @@ test('몰라 아무거나 is a valid random request with real food candidates an
   await resetQuota();assert(isRandomRequest('몰라 아무거나'));assert(isRandomRequest('그냥 아무거나 추천해줘!'));
   const {deps,calls}=dependencies();const result=await recommendWithAi(input('몰라 아무거나'),deps);
   assert(result.restaurants.length>0);assert.equal(result.needsClarification,false);assert.equal(calls(),0);assert.equal(await used(),1);
+});
+test('clear food survives noisy Korean input and cafe categories never become mandatory dish names',async()=>{
+  await resetQuota();const noisy=dependencies();const rice=await recommendWithAi(input('바밥ㅂ바밥ㅂ밥밥ㅂ'),noisy.deps);
+  assert.deepEqual(rice.filter.forms,['밥']);assert(rice.restaurants.length);assert(rice.restaurants.every((r:any)=>r._menuForms.includes('밥')));assert.equal(noisy.calls(),1);assert.equal(await used(),1);
+  await resetQuota();const cafe=await recommendWithAi(input('카페 추천해줘'),dependencies(A,{plan:plan({categories:['카페·디저트'],forms:[],menuTerms:['카페'],maxPrice:-1})}).deps);
+  assert(cafe.restaurants.length);assert(cafe.restaurants.every((r:any)=>r._categories.includes('카페')));assert.deepEqual(cafe.filter.menuTerms,[]);
+});
+test('registered restaurant names override name-derived menu or cuisine guesses; typo alternatives are confirmed without usage',async()=>{
+  await resetQuota();const wrong=dependencies(A,{plan:plan({categories:['치킨'],forms:[],menuTerms:['감성키친'],maxPrice:-1})});
+  const found=await recommendWithAi(input('감성키친 서구점 영업시간 무시'),wrong.deps);assert.equal(found.restaurants.length,1);assert.equal(found.restaurants[0].음식점아이디,'1680');assert.deepEqual(found.filter.restaurantIds,['1680']);assert.deepEqual(found.filter.menuTerms,[]);
+  await resetQuota();const typo=dependencies();const answer=await recommendWithAi(input('감성치킨'),typo.deps);assert.equal(answer.needsClarification,true);assert(answer.message.includes('감성키친 서구점'));assert(answer.message.includes('감성키친 도시락 서구점'));assert.equal(typo.calls(),0);assert.equal(await used(),0);
+});
+test('both restaurant-to-cafe and cafe-to-restaurant searches use a real anchor, straight-line order and the frozen retry filter',async()=>{
+  const cafe=(await db.query<any>("select id,name from restaurants where categories @> array['카페·디저트'] and latitude is not null and longitude is not null order by id limit 1")).rows[0];
+  for(const [text,anchor,category]of [['미향일식 근처 카페 영업시간 무시','15779',true],[cafe.name+'와 가까운 음식점 영업시간 무시',cafe.id,false]] as const){
+    await resetQuota();const result=await recommendWithAi(input(text),dependencies(A,{plan:plan({categories:['일식'],forms:[],menuTerms:['카페'],restaurantTerms:['미향일식'],maxPrice:-1})}).deps);
+    assert.equal(result.filter.nearRestaurantId,anchor);assert.equal(result.restaurants.length,3);assert(result.restaurants.every((r:any)=>r.음식점아이디!==anchor&&r._categories.includes('카페')===category));assert(result.message.includes('직선거리'));
+    const distances=result.restaurants.map((r:any)=>Number(r._distanceMeters));assert.deepEqual(distances,[...distances].sort((a,b)=>a-b));assert.equal(await used(),1);
+    const prior=Object.fromEntries(result.restaurants.map((r:any)=>[r.음식점아이디,r._menuIndex]));const retry=await rpc(A)('pick_restaurants',{p_filter:result.filter,p_size:3,p_locked:[],p_prior:prior});assert(retry.restaurants.every((r:any)=>!(r.restaurant.id in prior)));
+    const same=await rpc(A)('pick_restaurants',{p_filter:{...result.filter,maxDistanceMeters:100},p_size:3});assert(same.restaurants.every((r:any)=>r.restaurant.distance_m<=100));
+  }
+});
+test('nearby search does not invent an anchor or relax an explicit price, and missing coordinates ask for clarification',async()=>{
+  for(const text of ['알수없는장소 근처 카페','카페와 가까운 음식점','항상 영업하는 테스트 가게 근처 카페']){await resetQuota();const request=dependencies();const result=await recommendWithAi(input(text),request.deps);assert.equal(result.needsClarification,true);assert.equal(request.calls(),0);assert.equal(await used(),0);}
+  await resetQuota();const result=await recommendWithAi(input('미향일식 근처 카페 1원 이하 영업시간 무시'),dependencies(A,{plan:plan({categories:[],forms:[],maxPrice:1})}).deps);assert.equal(result.restaurants.length,0);assert.equal(result.filter.max,1);assert.equal(await used(),0);
+});
+test('choosing a suggested place keeps the original nearby target, and closed registered stores get a specific uncharged explanation',async()=>{
+  await resetQuota();const first=await recommendWithAi(input('감성치킨 근처 카페'),dependencies().deps);assert.equal(first.needsClarification,true);
+  const resolved=await recommendWithAi({history:[{role:'user',text:'감성치킨 근처 카페'},{role:'assistant',text:first.message},{role:'user',text:'ID 1680'}],size:3},dependencies().deps);
+  assert.equal(resolved.filter.nearRestaurantId,'1680');assert(resolved.restaurants.every((r:any)=>r._categories.includes('카페')));assert.equal(await used(),1);
+  await resetQuota();const closed=dependencies(A,{plan:plan({categories:[],forms:[],maxPrice:-1,allHours:false})});closed.deps.now=()=>({date:'2026-11-13',time:'08:00'});
+  const response=await recommendWithAi(input('감성 키친 서구점'),closed.deps);assert.equal(response.restaurants.length,0);assert(response.message.includes('영업시간 조건'));assert.equal(await used(),0);
 });
 test('unrelated input, clarification and no matching restaurant do not charge',async()=>{
   for(const [text,answer,clarifies]of [

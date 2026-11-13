@@ -63,6 +63,24 @@ test.beforeEach(async({page})=>{
   await page.addInitScript(()=>localStorage.setItem('bob-pick:help-seen:v1','1'));
 });
 
+test('AI resolves registered names and typo confirmations, and noisy food clues use real menu forms',async({page})=>{
+  await signupMember(page,'ai-name-regression@example.test');await page.locator('.service-nav a[href="#filters"]').click();
+  await page.locator('#chat-input').fill('감성키친 서구점 영업시간 무시');await page.locator('#chat-send').click();await expect(page.locator('#name')).toHaveText('감성키친 서구점');await expect(page.locator('#ai-quota')).toHaveText('오늘 남은 AI 추천 19/20회');
+  await page.locator('#chat-reset').click();await page.locator('#chat-input').fill('감성치킨');await page.locator('#chat-send').click();await expect(page.locator('#chat-log')).toContainText('감성키친 도시락 서구점');await expect(page.locator('#chat-log')).toContainText('어느 곳인가요');await expect(page.locator('#ai-quota')).toHaveText('오늘 남은 AI 추천 19/20회');
+  await page.locator('#chat-reset').click();await page.locator('#chat-input').fill('바밥ㅂ바밥ㅂ밥밥ㅂ');await page.locator('#chat-send').click();await expect(page.locator('.restaurant-card:visible')).not.toHaveCount(0);for(const tag of await page.locator('.restaurant-card:visible .tags').allTextContents())expect(tag).toContain('밥');await expect(page.locator('#ai-quota')).toHaveText('오늘 남은 AI 추천 18/20회');
+});
+
+test('AI searches both directions around a named cafe or restaurant, displays straight-line distance and preserves the origin on retry',async({page})=>{
+  await signupMember(page,'ai-nearby-regression@example.test');await page.locator('.service-nav a[href="#filters"]').click();
+  const catalog=await (await page.request.get('http://127.0.0.1:54329/rest/v1/restaurants?select=id,name,categories,latitude,longitude')).json(),cafe=catalog.find((r:any)=>r.categories.includes('카페·디저트')&&r.latitude!=null&&r.longitude!=null&&catalog.filter((other:any)=>other.name.replace(/\s/g,'')===r.name.replace(/\s/g,'')).length===1);
+  for(const [text,anchor,wantCafe]of [['미향일식 근처 카페 영업시간 무시','15779',true],[cafe.name+'와 가까운 음식점 영업시간 무시',cafe.id,false]] as const){
+    await page.locator('#chat-reset').click();await page.locator('#chat-input').fill(text);const completed=page.waitForResponse(r=>r.url().includes('/functions/v1/ai-recommend'));await page.locator('#chat-send').click();const result=await (await completed).json();expect(result.filter.nearRestaurantId).toBe(anchor);await expect(page.locator('.restaurant-card:visible')).toHaveCount(3);
+    for(const card of await page.locator('.restaurant-card:visible').all()){await expect(card.locator('.nearby-distance')).toContainText('직선');expect((await card.locator('.tags').textContent())!.includes('카페')).toBe(wantCafe);expect(await card.getAttribute('data-restaurant-id')).not.toBe(anchor);}
+    const repeated=page.waitForRequest(r=>r.url().endsWith('/rpc/pick_restaurants'));await page.locator('#result-retry').click();expect((await repeated).postDataJSON().p_filter).toEqual(result.filter);await expect(page.locator('#result-retry')).toBeEnabled();
+  }
+  await expect(page.locator('#ai-quota')).toHaveText('오늘 남은 AI 추천 18/20회');
+});
+
 test('first-visit help opens once per browser, remains accessible manually, and fits mobile',async({browser})=>{
   for(const viewport of [{width:1280,height:900},{width:390,height:844}]){
     const context=await browser.newContext({viewport}),page=await context.newPage();

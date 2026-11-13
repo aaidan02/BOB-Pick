@@ -54,7 +54,7 @@ createServer(async(req,res)=>{
       });
       const call=invoke('authenticated',user.id);
       try{
-        const result=await recommendWithAi(body,{rpc:call,settle:invoke('service_role',null),now:()=>({date:'2026-11-12',time:'12:00'}),preferences:async()=>(await call('my_food_preferences')).filter,
+        const result=await recommendWithAi(body,{rpc:call,settle:invoke('service_role',null),now:()=>({date:'2026-11-12',time:'12:00'}),restaurantCatalog:async()=>(await db.query<any>('select id,name,address,categories,latitude,longitude from restaurants where active')).rows,preferences:async()=>(await call('my_food_preferences')).filter,
           generate:async(_prompt:string,data:any)=>{
             if(data.candidates)return {picks:data.candidates.slice(0,data.wanted).map((row:any)=>({restaurantId:row[0],menuIndex:row[3][0]?.[0]??-1}))};
             const text=data.history.filter((item:any)=>item.role==='user').at(-1).text;
@@ -63,7 +63,7 @@ createServer(async(req,res)=>{
             if(/날씨|자바 코드|영화/.test(text)){plan.intent='unrelated';return plan;}
             if(/확인 질문/.test(text)){plan.intent='clarification';plan.question='방문 시각을 알려주세요.';return plan;}
             if(/국물|국밥|탕/.test(text))plan.forms=['국·탕·찌개'];
-            if(/한식/.test(text))plan.categories=['한식'];if(/치킨/.test(text))plan.categories=['치킨'];
+            if(/한식/.test(text))plan.categories=['한식'];if(/치킨/.test(text))plan.categories=['치킨'];if(/카페|커피/.test(text))plan.categories=['카페·디저트'];
             if(/만 ?원|10000/.test(text))plan.maxPrice=10000;
             if(/존재하지않는메뉴/.test(text))plan.menuTerms=['존재하지않는메뉴'];
             return plan;

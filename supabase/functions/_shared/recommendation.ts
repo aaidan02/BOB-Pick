@@ -1,5 +1,5 @@
 export interface Menu {id:string;restaurant_id:string;source_index:number;name:string;price:number|null;variable_price:boolean;forms:string[]}
-export interface Restaurant {id:string;name:string;address:string;detail_address:string;phone:string;latitude:number|null;longitude:number|null;representative_menu:string;categories:string[];forms:string[];hours_display:string;source_fields:Record<string,string>}
+export interface Restaurant {id:string;name:string;address:string;detail_address:string;phone:string;latitude:number|null;longitude:number|null;representative_menu:string;categories:string[];forms:string[];hours_display:string;source_fields:Record<string,string>;distance_m?:number}
 export interface Candidate {restaurant:Restaurant;menus:Menu[];selected?:Menu|null}
 export interface HistoryItem {role:'user'|'assistant';text:string}
 export function seoulNow(){
@@ -11,7 +11,7 @@ export function legacyRecommendation(item:Candidate,count:number,filter:Record<s
   return {...r.source_fields,'음식점아이디':r.id,'음식점명':r.name,'주소':r.address,'상세주소':r.detail_address,'전화번호':r.phone,'위도':r.latitude===null?'':String(r.latitude),'경도':r.longitude===null?'':String(r.longitude),'대표메뉴명':r.representative_menu,'운영시간정보':r.hours_display,
     _menu:m?.name??'',_menuId:m?.id??'',_menuIndex:m?String(m.source_index):'',_price:m?.price==null?'':String(m.price),_priceLabel:m?.variable_price?'변동가격':'',_priceMenu:m?.name??'',_menuForms:m?.forms.join(' · ')??'',
     _matchedMenuCount:String(item.menus.length),_matchedMenus:JSON.stringify(item.menus.map(menu=>({id:menu.id,name:menu.name,price:menu.price,...(menu.variable_price?{priceLabel:'변동가격'}:{})}))),
-    _categories:r.categories.join(' · '),_forms:r.forms.join(' · '),_count:String(count),_timeApplied:String(filter.checkHours!==false)};
+    _categories:r.categories.join(' · '),_forms:r.forms.join(' · '),_count:String(count),_timeApplied:String(filter.checkHours!==false),_distanceMeters:r.distance_m==null?'':String(r.distance_m),_nearbyName:typeof filter.nearbyName==='string'?filter.nearbyName:''};
 }
 export function validateHistory(value:unknown):HistoryItem[]{
   if(!Array.isArray(value)||!value.length||value.length>8)throw Error('대화를 확인해 주세요.');
