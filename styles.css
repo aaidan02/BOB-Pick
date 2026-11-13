@@ -1,0 +1,74 @@
+:root { color-scheme: light; --ink: #213b32; --green: #174b3b; --muted: #6c786f; --line: #e1e5db; --paper: #fffefa; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: #f6f6ee; color: var(--ink); font-family: "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; word-break: keep-all; }
+button, a { -webkit-tap-highlight-color: transparent; }
+a { color: inherit; }
+button:focus-visible, a:focus-visible, summary:focus-visible { outline: 3px solid #be782b; outline-offset: 5px; }
+.page { max-width: 1240px; margin: auto; padding: 0 44px; }
+.header { display: flex; justify-content: space-between; align-items: center; height: 104px; border-bottom: 1px solid var(--line); }
+.brand { display: inline-flex; gap: 7px; align-items: center; font-size: 23px; font-weight: 800; text-decoration: none; letter-spacing: -.7px; }
+.brand-light { font-weight: 400; }
+.brand-icon { display: grid; place-items: center; width: 34px; height: 34px; margin-right: 5px; border-radius: 50%; background: var(--green); color: #fff; font-size: 18px; }
+.location-tag { font-size: 13px; color: var(--muted); }
+.intro { padding: 48px 0 35px; }
+.eyebrow { margin: 0 0 14px; font-size: 13px; color: #617855; font-weight: 600; }
+h1 { margin: 0; font-size: clamp(32px, 4vw, 48px); line-height: 1.33; letter-spacing: -2px; font-weight: 750; }
+h1 span { color: #6e835d; }
+.intro-copy { margin: 17px 0 0; color: var(--muted); font-size: 14px; line-height: 1.8; }
+.picker-layout { display: grid; grid-template-columns: minmax(320px, .86fr) minmax(0, 1.3fr); gap: 22px; align-items: stretch; }
+.picker-panel, .map-panel { background: var(--paper); border: 1px solid var(--line); border-radius: 22px; overflow: hidden; }
+.picker-panel { padding: 26px; display: flex; flex-direction: column; min-height: 534px; }
+.panel-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.small-label { font-size: 10px; letter-spacing: 1.6px; font-weight: 700; color: #758272; }
+.count-tag { font-size: 11px; background: #edf1e5; padding: 6px 10px; border-radius: 20px; color: #526147; }
+.empty-state { text-align: center; padding: 26px 0 32px; flex: 1; }
+.bowl { width: 80px; height: 80px; display: grid; place-items: center; margin: 0 auto 16px; font-size: 45px; background: #f0f1e5; border-radius: 50%; }
+.empty-state h2 { font-size: 25px; line-height: 1.5; letter-spacing: -.8px; margin: 0; }
+.empty-state p { font-size: 13px; color: var(--muted); line-height: 1.9; margin: 14px 0 0; }
+#selection { padding: 25px 0 23px; flex: 1; }
+.result-label { margin: 0 0 8px; font-size: 12px; color: #718061; }
+#menu-name { margin: 0; font-size: 29px; line-height: 1.4; letter-spacing: -1px; overflow-wrap: anywhere; }
+.restaurant-name { margin: 9px 0 22px; font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
+.restaurant-info { margin: 0; font-size: 12px; line-height: 1.7; }
+.restaurant-info > div { display: grid; grid-template-columns: 86px minmax(0, 1fr); gap: 8px; margin-top: 10px; }
+dt { color: var(--muted); }
+dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.business-status { display: inline-block; padding: 2px 8px; border-radius: 5px; background: #eef0e8; color: #576349; font-size: 11px; }
+.business-status[data-status="폐업"] { background: #faeae2; color: #a34424; }
+.data-note { font-size: 10px; line-height: 1.7; color: var(--muted); margin: 12px 0 17px; }
+.map-link { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); text-decoration: none; font-size: 12px; font-weight: 600; }
+.map-link:hover { color: #568043; }
+.picker-actions { margin-top: auto; }
+#pick-button { width: 100%; display: flex; justify-content: space-between; align-items: center; border: 0; border-radius: 11px; padding: 17px 20px; background: var(--green); color: #fff; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; transition: background .15s; }
+#pick-button:hover { background: #28634e; }
+#pick-button:disabled { opacity: .55; cursor: default; }
+.selection-status { margin: 13px 0 0; min-height: 30px; font-size: 11px; line-height: 1.65; color: var(--muted); }
+.selection-status.error { color: #a34424; }
+.map-panel { display: flex; flex-direction: column; }
+.map-heading { display: flex; justify-content: space-between; align-items: center; padding: 22px 25px; }
+.map-heading .small-label { margin: 0 0 7px; font-size: 9px; }
+.map-heading h2 { font-size: 18px; margin: 0; letter-spacing: -.5px; }
+.map-dot { width: 9px; height: 9px; background: #b1bf82; border-radius: 50%; box-shadow: 0 0 0 6px #f0f2e6; margin-right: 5px; }
+.map-area { min-height: 370px; position: relative; flex: 1; background: #e9eee4; }
+#map { position: absolute; inset: 0; }
+.map-overlay { position: absolute; inset: 0; display: grid; place-items: center; padding: 30px; text-align: center; background: #edf0e7; }
+.map-overlay p { max-width: 350px; font-size: 13px; line-height: 1.9; color: #5b6c5b; }
+.map-status { min-height: 53px; margin: 0; padding: 16px 24px; color: var(--muted); font-size: 11px; line-height: 1.8; }
+.footer-note { margin: 20px 0 0; color: var(--muted); font-size: 11px; text-align: center; line-height: 1.8; }
+.record-details { border: 1px solid var(--line); margin-top: 22px; border-radius: 12px; padding: 18px 22px; background: var(--paper); font-size: 12px; }
+.record-details summary { cursor: pointer; }
+.record-details dl { margin: 18px 0 0; }
+.record-details dl > div { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 16px; padding: 9px 0; border-top: 1px solid var(--line); line-height: 1.7; }
+.footer { display: flex; justify-content: space-between; margin-top: 50px; padding: 24px 0; border-top: 1px solid var(--line); color: #82907e; font-size: 11px; }
+@media (max-width: 760px) {
+  .page { padding: 0 20px; }
+  .header { height: 80px; }
+  .brand { font-size: 20px; }
+  .intro { padding: 32px 0 26px; }
+  .picker-layout { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .picker-panel { min-height: 480px; padding: 23px; }
+  .map-area { min-height: 350px; }
+  .record-details dl > div { grid-template-columns: minmax(0, 1fr); gap: 3px; }
+  .footer { margin-top: 34px; }
+}

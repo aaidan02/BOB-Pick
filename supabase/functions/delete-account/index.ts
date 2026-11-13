@@ -1,0 +1,36 @@
+import {createClient} from 'npm:@supabase/supabase-js@2.119.0';
+import {deleteOwnAccount,AccountDeletionError} from '../_shared/account-deletion.ts';
+Deno.serve(async req=>{
+  const origin=req.headers.get('Origin')??'',allowed=(Deno.env.get('ALLOWED_ORIGINS')??'').split(',').map(s=>s.trim()).filter(Boolean);
+  const cors={'Access-Control-Allow-Origin':origin||'*','Access-Control-Allow-Headers':'authorization, apikey, content-type, x-client-info','Access-Control-Allow-Methods':'POST, OPTIONS','Vary':'Origin'};
+  const reply=(status:number,body:unknown)=>new Response(JSON.stringify(body),{status,headers:{...cors,'Content-Type':'application/json','Cache-Control':'no-store'}});
+  if(origin&&allowed.length&&!allowed.includes(origin))return reply(403,{error:'허용되지 않은 접속 주소입니다.'});
+  if(req.method==='OPTIONS')return new Response(null,{status:204,headers:cors});
+  if(req.method!=='POST')return reply(405,{error:'지원하지 않는 요청입니다.'});
+  try{
+    const authorization=req.headers.get('Authorization')??'';
+    if(!/^Bearer \S+$/.test(authorization))return reply(401,{error:'로그인 후 이용해 주세요.'});
+    const url=Deno.env.get('SUPABASE_URL')!,key=Deno.env.get('SUPABASE_ANON_KEY')!;
+    const client=createClient(url,key,{global:{headers:{Authorization:authorization}},auth:{persistSession:false,autoRefreshToken:false}});
+    const {data:{user},error}=await client.auth.getUser(authorization.slice(7));if(error||!user?.email)return reply(401,{error:'로그인 후 다시 시도해 주세요.'});
+    if(Number(req.headers.get('Content-Length')??0)>4096)return reply(413,{error:'요청 내용을 확인해 주세요.'});
+    const text=await req.text();if(text.length>4096)return reply(413,{error:'요청 내용을 확인해 주세요.'});
+    const verifier=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
+    const serviceKey=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');if(!serviceKey)throw Error('탈퇴 연결 설정이 필요합니다.');
+    const service=createClient(url,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}});
+    const result=await deleteOwnAccount(JSON.parse(text),user.id,{
+      status:async()=>{const {data,error}=await client.rpc('account_deletion_status');if(error)throw error;return data;},
+      verifyPassword:async password=>{
+        const {data,error}=await verifier.auth.signInWithPassword({email:user.email!,password});if(error||!data.user||!data.session)return null;
+        const token=data.session.access_token,claims=JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+        if(typeof claims.session_id!=='string')throw Error('본인 확인 세션을 확인하지 못했습니다.');
+        return {userId:data.user.id,token,sessionId:claims.session_id,session:{access_token:token,refresh_token:data.session.refresh_token}};
+      },
+      revokeSessions:async(token,scope)=>{const {error}=await service.auth.admin.signOut(token,scope);if(error)throw error;},
+      withdraw:async id=>{const {data,error}=await service.rpc('request_account_withdrawal',{p_user_id:id});if(error)throw error;return data;},
+      restore:async(id,sessionId)=>{const {data,error}=await service.rpc('restore_withdrawn_account',{p_user_id:id,p_session_id:sessionId});if(error)throw error;return data;}
+    });
+    if('sessionsRevoked'in result&&!result.sessionsRevoked)console.error('withdrawal refresh-session revocation failed; database access remains blocked');
+    return reply(200,result);
+  }catch(error){console.error('delete-account failed',error instanceof Error?error.name:'Error');const message=error instanceof Error?error.message:String((error as {message?:string})?.message??'');return reply(error instanceof AccountDeletionError?error.status:400,{error:error instanceof AccountDeletionError||/^(복원 가능한|복원할 탈퇴|본인 확인)/.test(message)?message:'탈퇴·복원 요청을 처리하지 못했습니다. 다시 로그인한 뒤 시도해 주세요.'});}
+});
