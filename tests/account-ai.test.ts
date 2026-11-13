@@ -92,6 +92,17 @@ test('registered restaurant names override name-derived menu or cuisine guesses;
   const found=await recommendWithAi(input('감성키친 서구점 영업시간 무시'),wrong.deps);assert.equal(found.restaurants.length,1);assert.equal(found.restaurants[0].음식점아이디,'1680');assert.deepEqual(found.filter.restaurantIds,['1680']);assert.deepEqual(found.filter.menuTerms,[]);
   await resetQuota();const typo=dependencies();const answer=await recommendWithAi(input('감성치킨'),typo.deps);assert.equal(answer.needsClarification,true);assert(answer.message.includes('감성키친 서구점'));assert(answer.message.includes('감성키친 도시락 서구점'));assert.equal(typo.calls(),0);assert.equal(await used(),0);
 });
+test('one place confirmation accepts yes, preserves the current target and never chooses among multiple candidates on a bare yes',async()=>{
+  const flat={categories:[],forms:[],maxPrice:-1};
+  const userMessage=(text:string)=>({role:'user',text}),assistant=(text:string)=>({role:'assistant',text});
+  await resetQuota();const single=await recommendWithAi(input('미향일'),dependencies(A,{plan:plan(flat)}).deps);assert(single.message.includes('이 음식점이 맞나요?'));assert(!single.message.includes('중 어느 곳'));assert.equal(await used(),0);
+  const oldContext=[userMessage('미향일식 근처 카페'),assistant('카페를 골랐어요.'),userMessage('미향일'),assistant(single.message)];
+  const legacy='‘미향일’과 비슷한 등록명이 있어요. 미향일식(대전광역시 서구 둔산동 1315) 중 어느 곳인가요? 음식점 이름과 주소로 알려주세요.';
+  for(const [answer,question]of [['네',single.message],['맞아요',single.message],['ㅇㅇ',single.message],['네',legacy]]){await resetQuota();const result=await recommendWithAi({history:[...oldContext.slice(0,-1),assistant(question),userMessage(answer)],size:3},dependencies(A,{plan:plan(flat)}).deps);assert.equal(result.restaurants.length,1);assert.equal(result.restaurants[0].음식점아이디,'15779');assert.equal(result.filter.nearRestaurantId,undefined);assert.equal(await used(),1);}
+  await resetQuota();const nearby=await recommendWithAi(input('미향일 근처 카페 영업시간 무시'),dependencies().deps);const response=await recommendWithAi({history:[userMessage('미향일 근처 카페 영업시간 무시'),assistant(nearby.message),userMessage('네')],size:3},dependencies(A,{plan:plan(flat)}).deps);assert.equal(response.filter.nearRestaurantId,'15779');assert(response.restaurants.every((r:any)=>r._categories.includes('카페')));assert.equal(await used(),1);
+  const multiple=await recommendWithAi(input('감성치킨'),dependencies().deps);assert(multiple.message.includes('중 어느 곳'));
+  for(const [question,answer]of [[multiple.message,'네'],[single.message,'아니요']] as const){await resetQuota();const request=dependencies(A,{plan:plan(flat)});const result=await recommendWithAi({history:[userMessage('감성치킨'),assistant(question),userMessage(answer)],size:3},request.deps);assert.equal(result.needsClarification,true);assert.equal(result.restaurants.length,0);assert.equal(request.calls(),0);assert.equal(await used(),0);}
+});
 test('both restaurant-to-cafe and cafe-to-restaurant searches use a real anchor, straight-line order and the frozen retry filter',async()=>{
   const cafe=(await db.query<any>("select id,name from restaurants where categories @> array['카페·디저트'] and latitude is not null and longitude is not null order by id limit 1")).rows[0];
   for(const [text,anchor,category]of [['미향일식 근처 카페 영업시간 무시','15779',true],[cafe.name+'와 가까운 음식점 영업시간 무시',cafe.id,false]] as const){

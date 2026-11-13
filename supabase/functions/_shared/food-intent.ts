@@ -1,5 +1,6 @@
 export interface CatalogPlace {id:string;name:string;address?:string;categories:string[];latitude:number|null;longitude:number|null}
 export const normalized=(text:string)=>text.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]/gu,'');
+export const isAffirmative=(text:string)=>/^(?:네|넵|예|응|맞아|맞아요|맞습니다|네맞아요|그곳|거기|좋아|좋아요|그래|그래요|ㅇㅇ)$/.test(text.trim().replace(/[\s\p{P}\p{S}]/gu,''));
 const generic=new Set(['카페','음식점','식당','치킨','피자','한식','양식','중식','일식','분식','밥','면','커피','디저트']);
 function aliases(place:CatalogPlace){return [...new Set([normalized(place.name),normalized(place.name.split(/\s/)[0])])].filter(s=>s.length>=3&&!generic.has(s));}
 export function stripPlaceNames(text:string,places:CatalogPlace[]){
@@ -34,4 +35,8 @@ export function foodHints(text:string,categories:string[],forms:string[]){
   if(soup&&forms.includes('국·탕·찌개'))fs.push('국·탕·찌개');
   return {categories:[...new Set(cats)],forms:[...new Set(fs)],noisy:(/[ㄱ-ㅎㅏ-ㅣ]/.test(text)||/^(밥|면|치킨|카페|커피|피자)\1+$/.test(text.trim()))&&!!(cats.length||fs.length)};
 }
-export function placeQuestion(term:string,places:CatalogPlace[]){return places.length?`‘${term.slice(0,80)}’과 비슷한 등록명이 있어요. ${places.slice(0,3).map(p=>p.name.slice(0,80)+'('+(p.address?.slice(0,60)||'둔산동')+')').join(', ')} 중 어느 곳인가요? 음식점 이름과 주소로 알려주세요.`:`‘${term.slice(0,120)}’을 기준 장소로 찾지 못했어요. 음식점이나 카페의 이름과 주소를 알려주세요.`;}
+export function placeQuestion(term:string,places:CatalogPlace[]){
+  const names=places.slice(0,3).map(p=>p.name.slice(0,80)+'('+(p.address?.slice(0,60)||'둔산동')+')');
+  if(places.length===1)return `‘${term.slice(0,80)}’과 비슷한 음식점을 찾았어요. ${names[0]}. 이 음식점이 맞나요? 맞으면 ‘네’라고 답해주세요.`;
+  return places.length?`‘${term.slice(0,80)}’과 비슷한 등록명이 있어요. ${names.join(', ')} 중 어느 곳인가요? 음식점 이름과 주소로 알려주세요.`:`‘${term.slice(0,120)}’을 기준 장소로 찾지 못했어요. 음식점이나 카페의 이름과 주소를 알려주세요.`;
+}
