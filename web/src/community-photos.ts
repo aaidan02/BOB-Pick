@@ -19,7 +19,7 @@ export function renderPhotoGallery(host:HTMLElement,ids:string[]=[]){
     const box=node('div','','photo-frame'),status=node('span','사진을 불러오는 중…','helper');box.append(status);host.append(box);
     void media('?id='+encodeURIComponent(id),{signal:abort.signal}).then(r=>r.blob()).then(blob=>{
       if(!alive)return;const url=URL.createObjectURL(blob);urls.push(url);const img=node('img');img.src=url;img.alt=`첨부 사진 ${index+1}`;img.loading='lazy';box.replaceChildren(img);
-    }).catch(error=>{if(alive)status.textContent=error.message;});
+    }).catch(error=>{if(alive)status.textContent=friendly(error);});
   }
   return dispose;
 }
