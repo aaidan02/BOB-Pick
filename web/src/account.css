@@ -4,6 +4,23 @@
 .bob-theme #member-email{margin:5px 0 0;overflow-wrap:anywhere}
 .bob-theme #account-recovery-email{overflow-wrap:anywhere}
 .bob-theme .admin-records>h2{font-size:22px;margin:26px 0 18px}
+.bob-theme .admin-records-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px;margin-bottom:22px;align-items:start}
+.bob-theme .admin-record-column{display:flex;flex-direction:column;min-width:0;height:min(74dvh,740px);border:1px solid var(--line);border-radius:24px;background:#fffefa;overflow:hidden}
+.bob-theme .admin-record-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:20px 22px;border-bottom:1px solid var(--line);flex-shrink:0;background:#f7f8f0}
+.bob-theme .admin-record-heading h3{font-size:18px;margin:0}
+.bob-theme .admin-record-heading button{font-size:12px;min-height:38px;padding:8px 12px;flex-shrink:0}
+.bob-theme .admin-record-scroll{min-height:0;flex:1;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;scrollbar-width:thin;padding:20px;overflow-wrap:anywhere}
+.bob-theme .admin-record-scroll:focus-visible{outline:2px solid var(--orange);outline-offset:-3px}
+.bob-theme #admin-inquiries-scroll{padding:0}
+.bob-theme #admin-inquiries-scroll>.surface{padding:20px;margin:0;border:0;border-bottom:1px solid var(--line);border-radius:0;box-shadow:none;background:transparent}
+.bob-theme .admin-record-scroll h2{font-size:17px}
+.bob-theme .admin-record-scroll .list-card{padding:18px;margin:12px 0}
+.bob-theme .admin-record-scroll .admin-post-card{padding:8px 0}
+.bob-theme .admin-record-scroll .moderation-editor{padding:16px;scroll-margin-block:16px}
+.bob-theme .admin-record-scroll :is(input,select,textarea){min-width:0}
+@media(min-width:1100px){.bob-theme .moderation-tabs{display:none}}
+@media(max-width:1099px){.bob-theme .admin-records-grid{grid-template-columns:minmax(0,1fr)}.bob-theme .admin-record-column{height:min(74dvh,740px)}}
+@media(max-width:560px){.bob-theme .admin-record-heading{padding:16px}.bob-theme .admin-record-heading h3{font-size:16px}.bob-theme .admin-record-scroll{padding:16px}.bob-theme #admin-inquiries-scroll>.surface{padding:16px}}
 .bob-theme .moderation-editor{padding:20px;margin-top:18px;border:1px solid #e2e5d6;border-radius:17px;background:#fafbf5;min-width:0}
 .bob-theme .admin-post-card>summary{cursor:pointer;padding:5px;list-style:none}
 .bob-theme .admin-post-card>summary::-webkit-details-marker{display:none}

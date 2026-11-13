@@ -7,7 +7,7 @@ import {initRequests,loadRequests,loadAdmin} from './requests';
 import {el} from './ui';
 import {isLegalPage,showLegalPage} from './legal';
 import {initAdminAccounts} from './admin-accounts';
-import {adminCommunityMarkup,initAdminRecords} from './admin-records';
+import {adminCommunityMarkup,initAdminRecords,refreshAdminRecords} from './admin-records';
 
 export async function initPortal(){
   el('service-view').innerHTML=`
@@ -87,11 +87,12 @@ export async function initPortal(){
         </div><p id="admin-account-status" class="form-status" role="status"></p>
       </section>
       <div class="admin-records"><h2>승인 및 처리 내역</h2><div class="moderation-tabs account-tabs" role="tablist" aria-label="관리 내역"><button id="admin-tab-inquiries" type="button" role="tab" aria-selected="true" aria-controls="admin-records-inquiries">문의 내역</button><button id="admin-tab-community" type="button" role="tab" aria-selected="false" aria-controls="admin-records-community">커뮤니티 내역</button></div>
-      <section id="admin-records-inquiries" role="tabpanel" aria-labelledby="admin-tab-inquiries">
+      <div class="admin-records-grid"><section id="admin-records-inquiries" class="admin-record-column" role="region" aria-labelledby="admin-inquiries-heading">
+      <div class="admin-record-heading"><h3 id="admin-inquiries-heading">문의 내역</h3><button id="admin-inquiries-reload" type="button" class="secondary">새로고침</button></div><div id="admin-inquiries-scroll" class="admin-record-scroll" tabindex="0" role="region" aria-label="문의 내역 목록">
       <section class="surface"><div class="section-head"><h2>승인 대기 <span id="admin-pending-count" class="status-badge">0</span></h2></div><div id="admin-pending"></div></section>
       <section class="surface"><h2>처리 내역</h2><div id="admin-reviews"></div></section>
       <section class="surface"><div class="section-head"><h2>고객센터 문의</h2><button id="admin-support-reload" type="button" class="secondary">새로고침</button></div><p id="admin-support-status" class="form-status" role="status"></p><div id="admin-support-list"></div></section>
-      </section><section id="admin-records-community" role="tabpanel" aria-labelledby="admin-tab-community" hidden>${adminCommunityMarkup()}</section></div>
+      </div></section><section id="admin-records-community" class="admin-record-column" role="region" aria-labelledby="admin-community-heading" hidden>${adminCommunityMarkup()}</section></div></div>
       <details class="surface audit-section"><summary>변경 이력 보기</summary><div id="admin-logs"></div></details>
     </div>
   </section>`;
@@ -107,7 +108,7 @@ export async function initPortal(){
     const returningHome=el('home-view').hidden&&!service;
     el('home-view').hidden=service;el('service-view').hidden=!service;
     document.querySelectorAll<HTMLElement>('.service-panel').forEach(panel=>panel.hidden=panel.id!==page+'-panel');
-    if(page==='community')void loadPosts();if(page==='favorites')void loadFavorites();if(page==='requests')void loadRequests();if(page==='admin'){void loadAdmin();void loadAdminSupport();}if(page==='support')void loadSupport();if(page==='account')void loadAccountOverview();
+    if(page==='community')void loadPosts();if(page==='favorites')void loadFavorites();if(page==='requests')void loadRequests();if(page==='admin'){void loadAdmin();void loadAdminSupport();refreshAdminRecords();}if(page==='support')void loadSupport();if(page==='account')void loadAccountOverview();
     if(service)el('service-view').scrollIntoView({block:'start'});
     if(returningHome)requestAnimationFrame(()=>{
       if(el('home-view').hidden||location.hash.slice(1)!==page)return;
@@ -126,7 +127,7 @@ export async function initPortal(){
     if(accountRecovery)route();
     el('request-login').hidden=!!user;el('request-form').hidden=!user;
     el('request-reload').hidden=!user;el('admin-content').hidden=!admin;
-    const identity=(user?.id??'')+':'+admin;if(location.hash==='#admin'&&adminIdentity!==identity){void loadAdmin();void loadAdminSupport();}adminIdentity=identity;
+    const identity=(user?.id??'')+':'+admin;if(location.hash==='#admin'&&adminIdentity!==identity){void loadAdmin();void loadAdminSupport();refreshAdminRecords();}adminIdentity=identity;
   });
   route();await initAuth();
 }
