@@ -1,17 +1,20 @@
-import {client,rpc} from './supabase';
+import {rpc} from './supabase';
 import {user,admin,requireUser} from './auth';
 import {action,date,el,input,message,node,friendly} from './ui';
 
-type Post={id:string;user_id:string;title:string;body:string;author_name:string;created_at:string;revision:number};
+import {PhotoEditor,clearPhotoGalleries,mountPostPhotos} from './community-photos';
+let photos:PhotoEditor;
+type Post={id:string;user_id:string;title:string;body:string;author_name:string;created_at:string;revision:number;photo_ids:string[]};
+let editorVersion=0;
 let offset=0,version=0,editing:Post|null=null,memberId:string|null=null;
 const expanded=new Set<string>();
 
 function clearEditor(){
-  editing=null;el<HTMLFormElement>('post-form').reset();el('post-save').textContent='등록하기';
+  editorVersion++;editing=null;photos?.reset();el<HTMLFormElement>('post-form').reset();el('post-save').textContent='등록하기';
   el('post-editor').hidden=true;el('post-compose').setAttribute('aria-expanded','false');
 }
 function openEditor(post?:Post){
-  editing=post??null;
+  editorVersion++;editing=post??null;photos.reset(post?.photo_ids??[]);
   el<HTMLInputElement>('post-title').value=post?.title??'';
   el<HTMLTextAreaElement>('post-body').value=post?.body??'';
   el('post-editor-title').textContent=post?'게시글 수정':'동네 이야기를 들려주세요';
@@ -25,7 +28,7 @@ export async function loadPosts(){
   try{
     const rows=await rpc<Post[]>('search_posts',{p_query:input('post-search'),p_offset:offset,p_mine:el<HTMLInputElement>('post-mine').checked});
     if(mine!==version)return;
-    const cards=rows.map(row=>{
+    clearPhotoGalleries(el('post-list'));const cards=rows.map(row=>{
       const card=node('details','','list-card post-card'),toggle=node('summary','','post-toggle');
       const avatar=node('span',(row.author_name||'밥친구').slice(0,1),'post-avatar');avatar.setAttribute('aria-hidden','true');
       const overview=node('div','','post-overview'),meta=node('small',(row.author_name||'밥친구')+' · '+date(row.created_at));
@@ -49,7 +52,8 @@ export async function loadPosts(){
         };actions.append(remove);
       }
       if(actions.children.length)body.append(actions);
-      card.append(toggle,body);card.open=expanded.has(row.id);
+      if(row.photo_ids?.length)overview.append(node('span','사진 '+row.photo_ids.length+'장','helper'));
+      card.append(toggle,body);mountPostPhotos(card,body,row.photo_ids);card.open=expanded.has(row.id);
       card.addEventListener('toggle',()=>{if(card.open)expanded.add(row.id);else expanded.delete(row.id);});
       return card;
     });
@@ -59,6 +63,7 @@ export async function loadPosts(){
   }catch(error){if(mine===version)message('post-list-status',friendly(error));}
 }
 export function initCommunity(){
+  photos=new PhotoEditor(el<HTMLInputElement>('post-photos'),el('post-photo-preview'),el('post-photo-status'));
   let timer:ReturnType<typeof setTimeout>;
   el('post-compose').onclick=()=>{if(!user){location.hash='account';return;}openEditor();};
   el('post-search').oninput=()=>{clearTimeout(timer);timer=setTimeout(()=>{offset=0;void loadPosts();},250);};
@@ -68,21 +73,19 @@ export function initCommunity(){
   el('post-cancel').onclick=()=>{clearEditor();el('post-compose').focus();};
   el<HTMLFormElement>('post-form').onsubmit=event=>{
     event.preventDefault();void action(el('post-save'),'post-status',async()=>{
-      const who=requireUser(),values={title:input('post-title'),body:input('post-body')};
+      const who=requireUser(),cycle=editorVersion,edited=editing,values={title:input('post-title'),body:input('post-body')};
       if(!values.title||!values.body)throw Error('제목과 내용을 입력해 주세요.');
-      if(editing){
-        if(editing.user_id!==who.id)await rpc('admin_edit_post',{p_id:editing.id,p_title:values.title,p_body:values.body,p_expected_revision:editing.revision,p_expected_actor:who.id});
-        else{const {data,error}=await client().from('posts').update(values).eq('id',editing.id).eq('user_id',who.id).eq('revision',editing.revision).select('id');
-          if(error)throw error;if(!data?.length)throw Error('이미 삭제되었거나 변경된 글이에요. 목록을 새로 확인해 주세요.');}
-        expanded.add(editing.id);
-      }else{
-        const {error}=await client().from('posts').insert({...values,user_id:who.id});if(error)throw error;
-      }
+      const ids=await photos.upload();
+      if(user?.id!==who.id)throw Error('계정이 변경되었습니다. 다시 시도해 주세요.');
+      if(cycle!==editorVersion)throw Error('작성 화면이 변경됐어요. 내용을 확인하고 다시 저장해 주세요.');
+      const saved=await rpc<string>('save_post',{p_id:edited?.id??null,p_title:values.title,p_body:values.body,p_photos:ids,p_expected_revision:edited?.revision??null,p_expected_actor:who.id});
+      if(user?.id!==who.id||cycle!==editorVersion)return;photos.committed();if(edited)expanded.add(saved);
       clearEditor();offset=0;await loadPosts();message('post-status','게시글을 저장했습니다.');
     });
   };
   window.addEventListener('identity-changed',()=>{
     if(memberId!==(user?.id??null)){memberId=user?.id??null;clearEditor();offset=0;expanded.clear();}
+    if(editing&&editing.user_id!==user?.id&&!admin)clearEditor();
     el<HTMLInputElement>('post-mine').disabled=!user;if(!user)el<HTMLInputElement>('post-mine').checked=false;
     if(location.hash==='#community')void loadPosts();
   });

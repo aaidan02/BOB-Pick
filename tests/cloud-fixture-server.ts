@@ -1,3 +1,4 @@
+import {communityMedia} from '../supabase/functions/_shared/community-media.ts';
 import {deleteOwnAccount,AccountDeletionError} from '../supabase/functions/_shared/account-deletion.ts';
 import {recommendWithAi,AiRequestError} from '../supabase/functions/_shared/ai-service.ts';
 /** Local test-only Auth/PostgREST facade backed by real PostgreSQL/RLS (PGlite). */
@@ -26,13 +27,24 @@ async function session(user:any){
   const token=Buffer.from(JSON.stringify({alg:'HS256',typ:'JWT'})).toString('base64url')+'.'+Buffer.from(JSON.stringify({sub:user.id,session_id:sessionId,aud:'authenticated',role:'authenticated',exp:Math.floor(Date.now()/1000)+3600})).toString('base64url')+'.test-only-signature';
   tokens.set(token,user);return {access_token:token,refresh_token:'test-refresh-'+user.id,expires_in:3600,expires_at:Math.floor(Date.now()/1000)+3600,token_type:'bearer',user};
 }
-const rpcArgs:Record<string,string[]>={catalog_options:[],site_popularity:[],admin_search_posts:['p_query','p_state','p_offset'],set_post_visibility:['p_id','p_deleted','p_expected_revision','p_expected_actor'],admin_edit_post:['p_id','p_title','p_body','p_expected_revision','p_expected_actor'],admin_edit_request:['p_id','p_payload','p_message','p_note','p_expected_revision','p_reopen','p_expected_actor'],admin_edit_support_ticket:['p_id','p_category','p_subject','p_body','p_expected_revision','p_expected_actor'],is_admin:[],recommend_count:['p_filter'],recommend_candidates:['p_filter'],pick_restaurants:['p_filter','p_size','p_locked','p_prior'],search_posts:['p_query','p_offset','p_mine'],submit_request:['p_kind','p_restaurant_id','p_payload','p_message'],review_request:['p_request_id','p_decision','p_note'],consume_ai_quota:[],ai_quota_status:[],account_recovery_status:[],admin_list_accounts:[],admin_search_accounts:['p_query'],admin_set_membership:['p_user_id','p_enabled'],begin_ai_request:[],complete_ai_request:['p_request_id','p_success'],save_food_preferences:['p_settings','p_user_id'],complete_food_preference_onboarding:['p_user_id'],my_food_preferences:[],my_account_overview:[],account_deletion_status:[],save_recommendation_history:['p_event_id','p_source','p_filter','p_items','p_user_id'],set_history_visit:['p_id','p_visited'],reply_support_ticket:['p_id','p_reply']};
+const mediaObjects=new Map<string,Blob>();
+const rpcArgs:Record<string,string[]>={save_post:['p_id','p_title','p_body','p_photos','p_expected_revision','p_expected_actor'],discard_post_photo:['p_id'],admin_restore_items:['p_kind','p_query','p_offset'],admin_restore_preview:['p_kind','p_id','p_version_id'],admin_restore_selected:['p_items','p_expected_actor'],catalog_options:[],site_popularity:[],admin_search_posts:['p_query','p_state','p_offset'],set_post_visibility:['p_id','p_deleted','p_expected_revision','p_expected_actor'],admin_edit_post:['p_id','p_title','p_body','p_expected_revision','p_expected_actor'],admin_edit_request:['p_id','p_payload','p_message','p_note','p_expected_revision','p_reopen','p_expected_actor'],admin_edit_support_ticket:['p_id','p_category','p_subject','p_body','p_expected_revision','p_expected_actor'],is_admin:[],recommend_count:['p_filter'],recommend_candidates:['p_filter'],pick_restaurants:['p_filter','p_size','p_locked','p_prior'],search_posts:['p_query','p_offset','p_mine'],submit_request:['p_kind','p_restaurant_id','p_payload','p_message'],review_request:['p_request_id','p_decision','p_note'],consume_ai_quota:[],ai_quota_status:[],account_recovery_status:[],admin_list_accounts:[],admin_search_accounts:['p_query'],admin_set_membership:['p_user_id','p_enabled'],begin_ai_request:[],complete_ai_request:['p_request_id','p_success'],save_food_preferences:['p_settings','p_user_id'],complete_food_preference_onboarding:['p_user_id'],my_food_preferences:[],my_account_overview:[],account_deletion_status:[],save_recommendation_history:['p_event_id','p_source','p_filter','p_items','p_user_id'],set_history_visit:['p_id','p_visited'],reply_support_ticket:['p_id','p_reply']};
 createServer(async(req,res)=>{
   const origin=req.headers.origin??'*';res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Access-Control-Allow-Headers','authorization,apikey,content-type,x-client-info,prefer,range,range-unit,x-supabase-api-version,content-profile,accept-profile,x-retry-count');res.setHeader('Access-Control-Allow-Methods','GET,POST,PATCH,DELETE,OPTIONS');
   const send=(status:number,data:any)=>{res.writeHead(status,{'Content-Type':'application/json'});res.end(data==null?'':JSON.stringify(data));};
   if(req.method==='OPTIONS'){send(204,null);return;}
   const token=(req.headers.authorization??'').replace(/^Bearer /,''),url=new URL(req.url!,'http://localhost'),user=tokens.get(token),claims=user?JSON.parse(Buffer.from(token.split('.')[1],'base64url').toString()):{};
-  let raw='';for await(const chunk of req)raw+=chunk;const body=raw?JSON.parse(raw):{};
+  const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));const bytes=Buffer.concat(chunks);
+  if(url.pathname==='/functions/v1/community-media'){
+    const invoke=(role:string,actor:string|null)=>async(name:string,args:Record<string,unknown>={})=>db.transaction(async tx=>{
+      await tx.exec('set local role '+role);await tx.query("select set_config('request.jwt.claim.sub',$1,true),set_config('request.jwt.claims',$2,true)",[actor??'',JSON.stringify(actor?claims:{})]);
+      const keys=Object.keys(args);return (await tx.query<any>(`select public.${name}(${keys.map((key,i)=>key+'=> $'+(i+1)).join(',')}) value`,Object.values(args))).rows[0].value;
+    });
+    const request=new Request('http://localhost'+req.url,{method:req.method,headers:req.headers as Record<string,string>,...(['GET','HEAD'].includes(req.method!)?{}:{body:bytes})});
+    const response=await communityMedia(request,{actor:async()=>({userId:user?.id??null,rpc:invoke(user?'authenticated':'anon',user?.id??null)}),service:invoke('service_role',null),ensureBucket:async()=>{},upload:async(key,data,type)=>{mediaObjects.set(key,new Blob([data as BlobPart],{type}));},download:async key=>{const found=mediaObjects.get(key);if(!found)throw Error('Missing object');return found;},remove:async keys=>{for(const key of keys)mediaObjects.delete(key);}});
+    res.writeHead(response.status,Object.fromEntries(response.headers));res.end(Buffer.from(await response.arrayBuffer()));return;
+  }
+  const raw=bytes.toString(),body=raw?JSON.parse(raw):{};
   try{
     if(url.pathname==='/health'){send(200,{ok:true});return;}
     if(url.pathname.startsWith('/auth/v1/')){
@@ -93,7 +105,7 @@ createServer(async(req,res)=>{
       const name=url.pathname.split('/').at(-1)!;
       if(url.pathname.startsWith('/rest/v1/rpc/')){
         const args=rpcArgs[name];if(!args)throw Error('Unknown test RPC');
-        const values=args.map(k=>body[k]??null),slots=args.map((_,i)=>'$'+(i+1)).join(',');
+        const values=args.map(k=>k==='p_items'?JSON.stringify(body[k]):body[k]??null),slots=args.map((_,i)=>'$'+(i+1)).join(',');
         if(['recommend_candidates','search_posts','admin_search_posts','admin_list_accounts','admin_search_accounts'].includes(name))return (await tx.query(`select * from public.${name}(${slots})`,values)).rows;
         return (await tx.query<any>(`select public.${name}(${slots}) value`,values)).rows[0].value;
       }

@@ -3,7 +3,7 @@ import {admin,user,requireUser} from './auth';
 import {action,date,el,input,message,node,friendly} from './ui';
 import {loadAdminAccounts} from './admin-accounts';
 import {attachAdminInquiryEditor} from './admin-inquiry-editor';
-const labels:Record<string,string>={correction:'정보 수정',registration:'음식점 등록',promotion:'홍보',pending:'대기',approved:'승인',rejected:'반려',admin:'관리자 권한',granted:'추가',revoked:'해제',master_assigned:'마스터 지정',request:'문의',post:'게시글',support:'고객센터',edited:'수정',reopened:'재검토',deleted:'삭제',restored:'복원',answered:'답변'};
+const labels:Record<string,string>={correction:'정보 수정',registration:'음식점 등록',promotion:'홍보',pending:'대기',approved:'승인',rejected:'반려',admin:'관리자 권한',granted:'추가',revoked:'해제',master_assigned:'마스터 지정',request:'문의',post:'게시글',support:'고객센터',edited:'수정',reopened:'재검토',deleted:'삭제',restored:'복원',answered:'답변',catalog:'가게 정보',version_restored:'이전 내용 복원'};
 const fieldLabels:Record<string,string>={name:'음식점 이름',address:'주소',phone:'전화번호',latitude:'위도',longitude:'경도',categories:'음식 종류',forms:'음식 형태',hours_text:'영업시간',hours_display:'영업시간',title:'홍보 제목',content:'홍보 내용',ends_at:'종료일',active:'추천 대상',price:'가격',variable_price:'변동가격'};
 type StoreOption={id:string;name:string;address:string};
 let stores:StoreOption[]=[],storesLoaded=false,storeLoad:Promise<void>|null=null;

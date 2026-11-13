@@ -3,7 +3,8 @@ import {rpc} from './supabase';
 import {action,date,el,input,message,node,friendly} from './ui';
 import {loadAdmin} from './requests';
 import {loadAdminSupport} from './support';
-type AdminPost={id:string;user_id:string;title:string;body:string;author_name:string;created_at:string;updated_at:string;deleted_at:string|null;revision:number};
+import {mountPostPhotos,clearPhotoGalleries} from './community-photos';
+type AdminPost={id:string;user_id:string;title:string;body:string;author_name:string;created_at:string;updated_at:string;deleted_at:string|null;revision:number;photo_ids:string[]};
 let offset=0,version=0,selected:AdminPost|null=null,owner:string|null=null,tab='inquiries';
 const sideBySide=matchMedia('(min-width:1100px)');
 export function adminCommunityMarkup(){return `
@@ -25,7 +26,7 @@ function updateLayout(){
 }
 export function refreshAdminRecords(){if(sideBySide.matches||tab==='community')void loadAdminPosts();}
 export async function loadAdminPosts(){
-  const mine=++version,who=user?.id;el('admin-post-list').replaceChildren();if(!admin||!who)return;
+  const mine=++version,who=user?.id;clearPhotoGalleries(el('admin-post-list'));el('admin-post-list').replaceChildren();if(!admin||!who)return;
   message('admin-post-status','게시글을 불러오고 있어요.');
   try{
     const rows=await rpc<AdminPost[]>('admin_search_posts',{p_query:input('admin-post-search'),p_state:input('admin-post-state'),p_offset:offset});
@@ -39,7 +40,7 @@ export async function loadAdminPosts(){
         if(!confirm(row.deleted_at?'이 게시글을 다시 공개할까요?':'이 게시글을 삭제할까요? 관리자 내역에 보관됩니다.'))return;
         void action(visibility,'admin-post-status',async()=>{const actor=requireUser().id;await rpc('set_post_visibility',{p_id:row.id,p_deleted:!row.deleted_at,p_expected_revision:row.revision,p_expected_actor:actor});if(user?.id!==actor)return;clearEditor();await loadAdminPosts();message('admin-post-status',row.deleted_at?'게시글을 복원했습니다.':'게시글을 삭제했습니다.');});
       };
-      buttons.append(edit,visibility);body.append(buttons);card.append(summary,body);el('admin-post-list').append(card);
+      buttons.append(edit,visibility);body.append(buttons);card.append(summary,body);mountPostPhotos(card,body,row.photo_ids);el('admin-post-list').append(card);
     }
     el('admin-post-prev').hidden=offset===0;el('admin-post-next').hidden=rows.length<20;message('admin-post-status',rows.length?'':'조건에 맞는 게시글이 없어요.');
   }catch(error){if(mine===version&&user?.id===who)message('admin-post-status',friendly(error));}

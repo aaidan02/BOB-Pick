@@ -1,3 +1,4 @@
+import {restoreMarkup,initRestore,loadRestore} from './admin-restore';
 import {accountMarkup,initAccount,loadAccountOverview} from './account';
 import {supportMarkup,initSupport,loadSupport,loadAdminSupport} from './support';
 import {initAuth,user,admin,accountRecovery} from './auth';
@@ -35,7 +36,7 @@ export async function initPortal(){
   </section>
   <section id="community-panel" class="service-panel" hidden aria-labelledby="community-heading">
     <div class="page-heading heading-actions"><div><p class="section-eyebrow">둔산동 밥친구들과</p><h1 id="community-heading">동네 이야기</h1><p>맛집 후기부터 오늘의 한 끼 고민까지.</p></div><button id="post-compose" type="button" aria-controls="post-editor" aria-expanded="false">＋ 글쓰기</button></div>
-    <div id="post-editor" class="surface" hidden><h2 id="post-editor-title">동네 이야기를 들려주세요</h2><form id="post-form" class="portal-form"><label>제목<input id="post-title" maxlength="120" required placeholder="어떤 이야기를 나누고 싶나요?"></label><label>내용<textarea id="post-body" rows="7" maxlength="10000" required placeholder="밥친구들에게 들려줄 이야기를 적어주세요"></textarea></label><div class="button-row"><button id="post-save">등록하기</button><button id="post-cancel" type="button" class="secondary">취소</button></div></form></div>
+    <div id="post-editor" class="surface" hidden><h2 id="post-editor-title">동네 이야기를 들려주세요</h2><form id="post-form" class="portal-form"><label>제목<input id="post-title" maxlength="120" required placeholder="어떤 이야기를 나누고 싶나요?"></label><label>내용<textarea id="post-body" rows="7" maxlength="10000" required placeholder="밥친구들에게 들려줄 이야기를 적어주세요"></textarea></label><label class="photo-input-label">사진 첨부 <span class="helper">선택 · 최대 3장 · 한 장에 5MB</span><input id="post-photos" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><div id="post-photo-preview" class="photo-editor-preview"></div><p id="post-photo-status" class="form-status" role="status"></p><div class="button-row"><button id="post-save">등록하기</button><button id="post-cancel" type="button" class="secondary">취소</button></div></form></div>
     <div class="surface community-feed">
       <div class="community-tools"><label class="grow search-field"><span class="sr-only">게시글 검색</span><input id="post-search" type="search" maxlength="120" placeholder="제목이나 내용으로 검색"></label><label class="checkbox"><input id="post-mine" type="checkbox" disabled>내 글만</label><button id="post-reload" type="button" class="secondary compact">새로고침</button></div>
       <p id="post-list-status" class="empty-state" role="status"></p><div id="post-list"></div><div class="button-row pagination"><button id="post-prev" type="button" class="secondary" hidden>이전</button><button id="post-next" type="button" class="secondary" hidden>다음</button></div>
@@ -71,7 +72,7 @@ export async function initPortal(){
     </div>
   </section>
   <section id="admin-panel" class="service-panel" hidden aria-labelledby="admin-heading">
-    <div class="page-heading heading-actions"><div><p class="section-eyebrow">밥픽 운영</p><h1 id="admin-heading">관리자</h1><p>신청을 검토하고 관리자 권한을 관리해요.</p></div><button id="admin-reload" type="button" class="secondary">새로고침</button></div>
+    <div class="page-heading heading-actions"><div><p class="section-eyebrow">밥픽 운영</p><h1 id="admin-heading">관리자</h1><p>신청을 검토하고 관리자 권한을 관리해요.</p></div><div class="button-row"><a id="admin-restore-link" class="button-link secondary" href="#admin-restore" hidden>복원하기</a><button id="admin-reload" type="button" class="secondary">새로고침</button></div></div>
     <p id="admin-status" class="form-status" role="status"></p><div id="admin-content" hidden>
       <div class="admin-summary" role="group" aria-label="관리 현황">
         <div class="admin-stat"><small>현재 관리자</small><strong id="admin-summary-members">—</strong></div>
@@ -95,30 +96,30 @@ export async function initPortal(){
       </div></section><section id="admin-records-community" class="admin-record-column" role="region" aria-labelledby="admin-community-heading" hidden>${adminCommunityMarkup()}</section></div></div>
       <details class="surface audit-section"><summary>변경 이력 보기</summary><div id="admin-logs"></div></details>
     </div>
-  </section>`;
+  </section>${restoreMarkup()}`;
   el('account-art').prepend(document.querySelector('.hero-art')!.cloneNode(true));
   initAccount();initSupport();
-  initCommunity();initFavorites();initRequests();initAdminAccounts();initAdminRecords();
+  initCommunity();initFavorites();initRequests();initAdminAccounts();initAdminRecords();initRestore();
   function route(){
     let page=location.hash.slice(1);
     if(isLegalPage(page)){showLegalPage(page);return;}
     if(accountRecovery&&page!=='account'){history.replaceState(null,'','#account');page='account';}
     el('legal-view').hidden=true;
-    const service=['account','favorites','community','requests','admin','support'].includes(page);
+    const service=['account','favorites','community','requests','admin','admin-restore','support'].includes(page);
     const returningHome=el('home-view').hidden&&!service;
     el('home-view').hidden=service;el('service-view').hidden=!service;
     document.querySelectorAll<HTMLElement>('.service-panel').forEach(panel=>panel.hidden=panel.id!==page+'-panel');
-    if(page==='community')void loadPosts();if(page==='favorites')void loadFavorites();if(page==='requests')void loadRequests();if(page==='admin'){void loadAdmin();void loadAdminSupport();refreshAdminRecords();}if(page==='support')void loadSupport();if(page==='account')void loadAccountOverview();
+    if(page==='admin-restore')void loadRestore();if(page==='community')void loadPosts();if(page==='favorites')void loadFavorites();if(page==='requests')void loadRequests();if(page==='admin'){void loadAdmin();void loadAdminSupport();refreshAdminRecords();}if(page==='support')void loadSupport();if(page==='account')void loadAccountOverview();
     if(service)el('service-view').scrollIntoView({block:'start'});
     if(returningHome)requestAnimationFrame(()=>{
       if(el('home-view').hidden||location.hash.slice(1)!==page)return;
       (document.getElementById(page)??el('home-view')).scrollIntoView({block:'start',behavior:'instant'});
     });
     document.querySelectorAll<HTMLAnchorElement>('.service-nav a').forEach(link=>{
-      const active=link.hash===location.hash||(!service&&link.hash==='#filters');
+      const active=link.hash===location.hash||(page==='admin-restore'&&link.hash==='#admin')||(!service&&link.hash==='#filters');
       if(active)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');
     });
-    const titles:Record<string,string>={account:'나의 밥픽',favorites:'내 찜 목록',community:'동네 이야기',requests:'문의·신청',admin:'관리자',support:'고객센터'};
+    const titles:Record<string,string>={account:'나의 밥픽',favorites:'내 찜 목록',community:'동네 이야기',requests:'문의·신청',admin:'관리자','admin-restore':'복원하기',support:'고객센터'};
     document.title=service?titles[page]+' · 밥픽':'밥픽 · 오늘은 뭘 먹을까요?';
   }
   window.addEventListener('hashchange',route);
@@ -126,7 +127,7 @@ export async function initPortal(){
   window.addEventListener('identity-changed',()=>{
     if(accountRecovery)route();
     el('request-login').hidden=!!user;el('request-form').hidden=!user;
-    el('request-reload').hidden=!user;el('admin-content').hidden=!admin;
+    el('request-reload').hidden=!user;el('admin-content').hidden=!admin;el('admin-restore-link').hidden=!admin;
     const identity=(user?.id??'')+':'+admin;if(location.hash==='#admin'&&adminIdentity!==identity){void loadAdmin();void loadAdminSupport();refreshAdminRecords();}adminIdentity=identity;
   });
   route();await initAuth();
