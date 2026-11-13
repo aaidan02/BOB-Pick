@@ -3,14 +3,15 @@ export const normalized=(text:string)=>text.normalize('NFKC').toLowerCase().repl
 const generic=new Set(['카페','음식점','식당','치킨','피자','한식','양식','중식','일식','분식','밥','면','커피','디저트']);
 function aliases(place:CatalogPlace){return [...new Set([normalized(place.name),normalized(place.name.split(/\s/)[0])])].filter(s=>s.length>=3&&!generic.has(s));}
 export function stripPlaceNames(text:string,places:CatalogPlace[]){
-  for(const p of places)for(const name of [p.name,p.name.split(/\s/)[0]]){if(name.length<3)continue;const pattern=[...name.replace(/\s/g,'')].map(c=>c.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('\\s*');text=text.replace(new RegExp(pattern,'gi'),'');}return text;
+  for(const p of places)for(const name of [p.name,p.name.split(/\s/)[0],p.address??'']){if(name.length<3)continue;const pattern=[...name.replace(/\s/g,'')].map(c=>c.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('\\s*');text=text.replace(new RegExp(pattern,'gi'),'');}return text;
 }
 export function placeMatches(text:string,catalog:CatalogPlace[]){
   const id=/^(?:음식점\s*)?(?:아이디|id|#)\s*[:：]?\s*([a-zA-Z0-9_-]+)$/i.exec(text.trim())?.[1]??(/^\d+$/.test(text.trim())?text.trim():null);if(id)return catalog.filter(p=>p.id===id);
   const value=normalized(text),full=catalog.filter(p=>normalized(p.name).length>=2&&!generic.has(normalized(p.name))&&value.includes(normalized(p.name)));
-  if(full.length)return full.filter(p=>!full.some(other=>other.id!==p.id&&normalized(other.name).includes(normalized(p.name))));
+  const narrow=(places:CatalogPlace[])=>{const byAddress=places.filter(p=>p.address&&value.includes(normalized(p.address)));if(byAddress.length)places=byAddress.filter(p=>!byAddress.some(other=>normalized(other.address!).length>normalized(p.address!).length&&normalized(other.address!).includes(normalized(p.address!))));const literal=places.filter(p=>text.includes(p.name));return literal.length?literal:places;};
+  if(full.length)return narrow(full.filter(p=>!full.some(other=>normalized(other.name).length>normalized(p.name).length&&normalized(other.name).includes(normalized(p.name)))));
   const matches=catalog.flatMap(p=>aliases(p).filter(a=>value.includes(a)).map(a=>({p,length:a.length})));
-  const longest=Math.max(0,...matches.map(m=>m.length));return [...new Map(matches.filter(m=>m.length===longest).map(m=>[m.p.id,m.p])).values()];
+  const longest=Math.max(0,...matches.map(m=>m.length));return narrow([...new Map(matches.filter(m=>m.length===longest).map(m=>[m.p.id,m.p])).values()]);
 }
 function edits(a:string,b:string){let row=Array.from({length:b.length+1},(_,i)=>i);for(let i=1;i<=a.length;i++){const next=[i];for(let j=1;j<=b.length;j++)next[j]=Math.min(row[j]+1,next[j-1]+1,row[j-1]+Number(a[i-1]!==b[j-1]));row=next;}return row[b.length];}
 export function similarPlaces(text:string,catalog:CatalogPlace[]){
@@ -33,4 +34,4 @@ export function foodHints(text:string,categories:string[],forms:string[]){
   if(soup&&forms.includes('국·탕·찌개'))fs.push('국·탕·찌개');
   return {categories:[...new Set(cats)],forms:[...new Set(fs)],noisy:(/[ㄱ-ㅎㅏ-ㅣ]/.test(text)||/^(밥|면|치킨|카페|커피|피자)\1+$/.test(text.trim()))&&!!(cats.length||fs.length)};
 }
-export function placeQuestion(term:string,places:CatalogPlace[]){return places.length?`‘${term.slice(0,80)}’과 비슷한 등록명이 있어요. ${places.slice(0,3).map(p=>'‘'+p.name.slice(0,80)+'’ ('+(p.address?.slice(0,60)||'둔산동')+', ID '+p.id.slice(0,50)+')').join(', ')} 중 어느 곳인가요? 이름·지점이나 ID로 알려주세요.`:`‘${term.slice(0,120)}’을 기준 장소로 찾지 못했어요. 등록된 음식점이나 카페의 이름·지점을 알려주세요.`;}
+export function placeQuestion(term:string,places:CatalogPlace[]){return places.length?`‘${term.slice(0,80)}’과 비슷한 등록명이 있어요. ${places.slice(0,3).map(p=>p.name.slice(0,80)+'('+(p.address?.slice(0,60)||'둔산동')+')').join(', ')} 중 어느 곳인가요? 음식점 이름과 주소로 알려주세요.`:`‘${term.slice(0,120)}’을 기준 장소로 찾지 못했어요. 음식점이나 카페의 이름과 주소를 알려주세요.`;}

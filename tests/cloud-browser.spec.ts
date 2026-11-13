@@ -66,7 +66,7 @@ test.beforeEach(async({page})=>{
 test('AI resolves registered names and typo confirmations, and noisy food clues use real menu forms',async({page})=>{
   await signupMember(page,'ai-name-regression@example.test');await page.locator('.service-nav a[href="#filters"]').click();
   await page.locator('#chat-input').fill('감성키친 서구점 영업시간 무시');await page.locator('#chat-send').click();await expect(page.locator('#name')).toHaveText('감성키친 서구점');await expect(page.locator('#ai-quota')).toHaveText('오늘 남은 AI 추천 19/20회');
-  await page.locator('#chat-reset').click();await page.locator('#chat-input').fill('감성치킨');await page.locator('#chat-send').click();await expect(page.locator('#chat-log')).toContainText('감성키친 도시락 서구점');await expect(page.locator('#chat-log')).toContainText('어느 곳인가요');await expect(page.locator('#ai-quota')).toHaveText('오늘 남은 AI 추천 19/20회');
+  await page.locator('#chat-reset').click();await page.locator('#chat-input').fill('미향일');await page.locator('#chat-send').click();await expect(page.locator('#chat-log')).toContainText('미향일식(대전광역시 서구 둔산동 1315)');await expect(page.locator('#chat-log')).toContainText('어느 곳인가요');await expect(page.locator('#chat-log')).not.toContainText('ID');await expect(page.locator('#ai-quota')).toHaveText('오늘 남은 AI 추천 19/20회');
   await page.locator('#chat-reset').click();await page.locator('#chat-input').fill('바밥ㅂ바밥ㅂ밥밥ㅂ');await page.locator('#chat-send').click();await expect(page.locator('.restaurant-card:visible')).not.toHaveCount(0);for(const tag of await page.locator('.restaurant-card:visible .tags').allTextContents())expect(tag).toContain('밥');await expect(page.locator('#ai-quota')).toHaveText('오늘 남은 AI 추천 18/20회');
 });
 
@@ -535,7 +535,7 @@ test('my information changes the password only after matching confirmation and r
 
 test('customer center accepts private inquiries and the owner sees an administrator reply',async({page,browser})=>{
   await signupMember(page,'support-new@example.test');await page.locator('.site-footer a[href="#support"]').click();
-  await page.locator('#support-category').selectOption('bug');await page.locator('#support-subject').fill('고객센터 답변 테스트');await page.locator('#support-body').fill('<img src=x onerror=alert(1)> 추천 화면 문의');await page.locator('#support-submit').click();await expect(page.locator('#support-status')).toContainText('문의를 접수했습니다.');
+  await expect(page.locator('#support-body')).toHaveAttribute('placeholder','문제 상황을 알려주세요. 비밀번호는 적지 마세요.');await page.locator('#support-category').selectOption('bug');await page.locator('#support-subject').fill('고객센터 답변 테스트');await page.locator('#support-body').fill('<img src=x onerror=alert(1)> 추천 화면 문의');await page.locator('#support-submit').click();await expect(page.locator('#support-status')).toContainText('문의를 접수했습니다.');
   const context=await browser.newContext(),staff=await context.newPage();
   try{
     await staff.route('https://oapi.map.naver.com/**',r=>r.abort());await login(staff,'admin@example.test');await staff.locator('#admin-link').click();

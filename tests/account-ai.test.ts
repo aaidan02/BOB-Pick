@@ -5,6 +5,7 @@ import {PGlite} from '@electric-sql/pglite';
 import {recommendWithAi,isRandomRequest,AiRequestError,type AiDependencies} from '../supabase/functions/_shared/ai-service.ts';
 import {applyPreferenceFilter,emptyPreferences} from '../supabase/functions/_shared/preferences.ts';
 import {deleteOwnAccount,AccountDeletionError,type AccountDeletionDependencies} from '../supabase/functions/_shared/account-deletion.ts';
+import {placeMatches} from '../supabase/functions/_shared/food-intent.ts';
 let db:PGlite;
 const A='00000000-0000-4000-8000-000000000001',B='00000000-0000-4000-8000-000000000002',ADMIN='00000000-0000-4000-8000-000000000003',MASTER='00000000-0000-4000-8000-000000000005';
 const LEGACY='00000000-0000-4000-8000-000000000007';
@@ -107,8 +108,10 @@ test('nearby search does not invent an anchor or relax an explicit price, and mi
 });
 test('choosing a suggested place keeps the original nearby target, and closed registered stores get a specific uncharged explanation',async()=>{
   await resetQuota();const first=await recommendWithAi(input('감성치킨 근처 카페'),dependencies().deps);assert.equal(first.needsClarification,true);
-  const resolved=await recommendWithAi({history:[{role:'user',text:'감성치킨 근처 카페'},{role:'assistant',text:first.message},{role:'user',text:'ID 1680'}],size:3},dependencies().deps);
+  assert(!/\bID\b|아이디/.test(first.message));const place=(await db.query<any>("select * from restaurants where id='1680'")).rows[0];assert(first.message.includes(`${place.name}(${place.address})`));
+  const resolved=await recommendWithAi({history:[{role:'user',text:'감성치킨 근처 카페'},{role:'assistant',text:first.message},{role:'user',text:`${place.name}(${place.address})`}],size:3},dependencies().deps);
   assert.equal(resolved.filter.nearRestaurantId,'1680');assert(resolved.restaurants.every((r:any)=>r._categories.includes('카페')));assert.equal(await used(),1);
+  const duplicate=[{...place,id:'first',name:'동네카페',address:'대전 둔산동 1'},{...place,id:'second',name:'동네카페',address:'대전 둔산동 2'}];assert.deepEqual(placeMatches('동네카페(대전 둔산동 2)',duplicate).map(p=>p.id),['second']);assert.equal(placeMatches('동네카페',duplicate).length,2);
   await resetQuota();const closed=dependencies(A,{plan:plan({categories:[],forms:[],maxPrice:-1,allHours:false})});closed.deps.now=()=>({date:'2026-11-13',time:'08:00'});
   const response=await recommendWithAi(input('감성 키친 서구점'),closed.deps);assert.equal(response.restaurants.length,0);assert(response.message.includes('영업시간 조건'));assert.equal(await used(),0);
 });

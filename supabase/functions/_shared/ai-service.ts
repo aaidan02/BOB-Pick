@@ -52,11 +52,12 @@ export async function recommendWithAi(input:Record<string,any>,deps:AiDependenci
         가격은 메뉴 전체 원 단위 정수이며 조건 없음은 -1이다. menuTerms는 명시한 구체적 메뉴·재료의 OR 목록이다. 형태·종류를 메뉴 키워드에 중복 넣지 않는다.
         restaurantTerms는 명시한 가게명이다. 제외 조건도 추출한다. 근거 없는 동의어·선호 조건을 만들지 않는다.
         knownPlaces는 실제 등록 가게 후보다. 이 이름을 메뉴 키워드로 넣지 않는다. 가게 이름 속 일식·치킨 등을 사용자가 별도로 지정한 음식 조건으로 추측하지 않는다.
+        가게 확인 안내는 음식점 이름(주소)으로 표시한다. 사용자에게 내부 ID를 보여주거나 ID 입력을 요구하지 않는다.
         A 근처 B, A와 가까운 B는 nearRestaurant=A, 찾을 종류·형태·메뉴=B다. 카페 근처 음식점도 같은 방식이다. 기준 가게를 restaurantTerms에 넣지 않는다.
         카페·커피는 제공한 카페 종류로 연결하고 메뉴 키워드에 카페를 넣지 않는다. 오타·반복 안에 분명한 음식 단서가 있으면 그 조건을 사용한다.
         nearRestaurant는 등록 가게 이름 또는 빈 문자열이다. maxDistanceMeters는 명시한 거리(m)만 정수로 반환하고 없으면 -1이다. 가격·날짜·제외 조건을 지우지 않는다.
         방문 날짜·시각은 명시한 값만 ISO 날짜·HH:mm으로 반환하고 없으면 빈 문자열이다. 상대 날짜는 currentKoreanTime 기준이다.
-        진짜 모순·알레르기 보장·불명확한 방문 시각에는 clarification과 짧은 question을 반환한다. 정상 추천의 question은 빈 문자열이다. 영업시간을 무시하라고 명시한 경우에만 allHours=true다.`,{history,...options,knownPlaces:placeMatches(history.filter(h=>h.role==='user').map(h=>h.text).join(' '),catalog).slice(0,30).map(p=>({id:p.id,name:p.name,categories:p.categories})),currentKoreanTime:deps.now?.()??seoulNow()},planSchema,deps.signal);
+        진짜 모순·알레르기 보장·불명확한 방문 시각에는 clarification과 짧은 question을 반환한다. 정상 추천의 question은 빈 문자열이다. 영업시간을 무시하라고 명시한 경우에만 allHours=true다.`,{history,...options,knownPlaces:placeMatches(history.filter(h=>h.role==='user').map(h=>h.text).join(' '),catalog).slice(0,30).map(p=>({name:p.name,address:p.address??'',categories:p.categories})),currentKoreanTime:deps.now?.()??seoulNow()},planSchema,deps.signal);
       if(!['recommendation','random','clarification','unrelated'].includes(plan.intent)||typeof plan.question!=='string'||plan.question.length>1000)throw new AiRequestError('AI 검색 조건을 확인하지 못했습니다.');
       if(plan.intent==='unrelated'&&(named.length||spatial||/^(?:카페|커피|디저트|치킨|한식|양식|중식|일식|분식)(?:\s*(?:추천|찾아|먹|좀|주세요|해줘).*)?$/.test(target.trim()))){plan.intent='recommendation';plan.question='';}
       if(plan.intent==='unrelated')return clarification('음식 추천을 도와드릴게요. 먹고 싶은 메뉴나 예산을 말해주세요. 모르겠다면 “아무거나 추천해줘”도 괜찮아요.');
