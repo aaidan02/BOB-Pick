@@ -48,6 +48,17 @@
     </svg>
     <span class="hero-caption" aria-hidden="true">오늘은 뭐 먹지?</span>
   </div></section>
+  <aside id="popular-restaurants" class="popular-sidebar" aria-labelledby="popular-heading">
+    <button id="popularity-toggle" class="popularity-toggle" type="button" aria-expanded="false" aria-controls="popularity-panel"><span aria-hidden="true">↗</span> 동네 인기 TOP 3</button>
+    <section id="popularity-panel" class="popular-panel">
+      <div class="popular-heading"><div><p class="section-eyebrow">둔산동 TOP 3</p><h2 id="popular-heading">인기 음식점</h2></div><div class="popular-controls"><button id="popularity-reload" type="button" aria-label="인기 음식점 새로고침" title="새로고침">↻</button><button id="popularity-close" type="button" aria-label="인기 음식점 닫기">×</button></div></div>
+      <p id="popularity-status" class="helper" role="status"></p><div class="popular-grid">
+        <section class="popular-card" aria-labelledby="popular-search-heading"><h3 id="popular-search-heading">많이 검색된 곳</h3><p class="sr-only">추천·조건검색 결과에 나온 횟수</p><ol id="popular-searches"></ol></section>
+        <section class="popular-card" aria-labelledby="popular-visit-heading"><h3 id="popular-visit-heading">많이 다녀온 곳</h3><p class="sr-only">‘다녀왔어요’를 표시한 회원 수</p><ol id="popular-visits"></ol></section>
+        <section class="popular-card" aria-labelledby="popular-favorite-heading"><h3 id="popular-favorite-heading">많이 찜한 곳</h3><p class="sr-only">메뉴를 찜한 회원 수</p><ol id="popular-favorites"></ol></section>
+      </div><p id="popular-started" class="helper"></p>
+    </section>
+  </aside>
   <div class="shell content">
     <div class="recommendation-workspace">
     <section id="filters" class="filters" aria-label="수동 조건 검색">
@@ -110,11 +121,6 @@
         <div id="map" aria-label="추천 음식점의 위치"></div><p id="map-status" role="status">지도를 불러오는 중입니다.</p>
       </section>
     </div>
-    <section id="popular-restaurants" class="popular-section" aria-labelledby="popular-heading"><div class="section-head"><div><p class="section-eyebrow">밥친구들의 선택</p><h2 id="popular-heading">우리 동네 인기 음식점</h2><p class="helper">회원들의 검색 결과·방문 표시·메뉴 찜을 모았어요.</p></div><button id="popularity-reload" type="button" class="secondary">새로고침</button></div><p id="popularity-status" class="helper" role="status"></p><div class="popular-grid">
-      <section class="popular-card" aria-labelledby="popular-search-heading"><h3 id="popular-search-heading">많이 검색된 곳</h3><p class="helper">추천·조건검색 결과에 나온 횟수</p><ol id="popular-searches"></ol><p id="popular-started" class="helper"></p></section>
-      <section class="popular-card" aria-labelledby="popular-visit-heading"><h3 id="popular-visit-heading">많이 다녀온 곳</h3><p class="helper">‘다녀왔어요’를 표시한 회원 수</p><ol id="popular-visits"></ol></section>
-      <section class="popular-card" aria-labelledby="popular-favorite-heading"><h3 id="popular-favorite-heading">많이 찜한 곳</h3><p class="helper">메뉴를 찜한 회원 수</p><ol id="popular-favorites"></ol></section>
-    </div></section>
     <section class="home-stories" aria-label="밥픽 더 즐기기">
       <a class="home-story" href="#community"><div><small>NEIGHBORHOOD STORY</small><h2>우리 동네 맛있는 이야기,<br>밥친구들과 나눠요.</h2></div><span aria-hidden="true">↗</span></a>
       <a class="home-story" href="#favorites"><div><small>MY TASTE COLLECTION</small><h2>다음에 또 먹고 싶은 한 끼,<br>내 취향만 모아두세요.</h2></div><span aria-hidden="true">♡</span></a>

@@ -34,19 +34,28 @@ test('administrator edits a rejected inquiry and reason, reopens it and applies 
   }finally{await context.close();}
 });
 
-test('public popularity lists show real result counts and member visits or favorites, link to the store and fit mobile',async({page})=>{
+test('popularity stays in the left gutter without adding page height and collapses into an accessible panel on smaller screens',async({page})=>{
   const signed=page.waitForResponse(r=>r.url().includes('/auth/v1/signup'));await signupMember(page,'popularity-ui@example.test');const token=(await (await signed).json()).access_token,api='http://127.0.0.1:54329/rest/v1',headers={Authorization:'Bearer '+token};
   const member=await (await page.request.get('http://127.0.0.1:54329/auth/v1/user',{headers})).json();
   const menus=await (await page.request.get(api+'/menus?restaurant_id=eq.15779&select=id&limit=2')).json();
   for(let i=0;i<6;i++){const saved=await page.request.post(api+'/rpc/save_recommendation_history',{headers,data:{p_event_id:crypto.randomUUID(),p_source:'manual',p_filter:{checkHours:false},p_items:[{restaurantId:'15779',menuId:menus[0].id}]}});expect(saved.ok()).toBe(true);}
   await page.request.post(api+'/favorites',{headers,data:{user_id:member.id,menu_id:menus[0].id}});
   await page.locator('#account-tab-history').click();const history=page.locator('#history-list .history-card').filter({hasText:'미향일식'}).first();await history.getByRole('button',{name:'다녀왔어요',exact:true}).click();
-  await page.locator('.brand').click();await page.locator('#popularity-reload').click();await expect(page.locator('#popularity-status')).toHaveText('');
+  await page.setViewportSize({width:1920,height:900});await page.locator('.brand').click();await page.locator('#popularity-reload').click();await expect(page.locator('#popularity-status')).toHaveText('');
   for(const id of ['popular-searches','popular-visits','popular-favorites']){await expect(page.locator('#'+id)).toContainText('미향일식');const link=page.locator('#'+id+' a').filter({hasText:'미향일식'});await expect(link).toHaveAttribute('target','_blank');expect(await link.getAttribute('href')).toContain('map.naver.com');}
   await expect(page.locator('#popular-started')).toContainText('부터 검색 집계');await expect(page.locator('#popular-searches .popular-total').first()).toContainText('회');
-  await page.locator('#popular-restaurants').scrollIntoViewIfNeeded();await page.screenshot({path:'build/popularity-desktop.png'});
-  for(const width of [390,320]){await page.setViewportSize({width,height:844});await page.locator('#popular-restaurants').scrollIntoViewIfNeeded();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}await page.screenshot({path:'build/popularity-mobile.png',fullPage:true});
+  const sidebar=page.locator('#popularity-panel'),toggle=page.locator('#popularity-toggle');await expect(sidebar).toBeVisible();await expect(toggle).toBeHidden();
+  const panel=(await sidebar.boundingBox())!,main=(await page.locator('#home-view>.content').boundingBox())!;expect(panel.x+panel.width).toBeLessThanOrEqual(main.x-16);expect(panel.width).toBeLessThanOrEqual(240);
+  expect(await page.locator('#home-view').evaluate(home=>{const before=home.getBoundingClientRect().height,sidebar=document.getElementById('popular-restaurants')!;sidebar.style.display='none';const after=home.getBoundingClientRect().height;sidebar.style.removeProperty('display');return before===after;})).toBe(true);
+  await page.screenshot({path:'build/popularity-desktop.png'});
+  for(const width of [1500,1280,390,320]){
+    await page.setViewportSize({width,height:844});await expect(toggle).toBeVisible();if(await sidebar.isVisible())await page.locator('#popularity-close').click();await expect(sidebar).toBeHidden();
+    await toggle.click();await expect(toggle).toHaveAttribute('aria-expanded','true');await expect(sidebar).toBeVisible();const rect=(await sidebar.boundingBox())!;expect(rect.x).toBeGreaterThanOrEqual(0);expect(rect.x+rect.width).toBeLessThanOrEqual(width);expect(rect.y).toBeGreaterThanOrEqual(75);expect(rect.y+rect.height).toBeLessThan(844-(width<=820?90:20));
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await toggle.press('Escape');await expect(sidebar).toBeHidden();await expect(toggle).toBeFocused();
+  }
+  await toggle.click();await page.screenshot({path:'build/popularity-mobile.png'});
   await page.route('**/rest/v1/rpc/site_popularity',r=>r.fulfill({status:500,json:{message:'internal data'}}));await page.locator('#popularity-reload').click();await expect(page.locator('#popularity-status')).toContainText('불러오지 못했어요');await expect(page.locator('#popular-searches')).toContainText('미향일식');await expect(page.locator('#pick')).toBeEnabled();
+  await page.locator('.service-nav a[href="#community"]').click();await expect(toggle).toBeHidden();await page.locator('.brand').click();await expect(sidebar).toBeHidden();
 });
 test.beforeEach(async({page})=>{
   await page.route('https://oapi.map.naver.com/**',route=>route.abort());
