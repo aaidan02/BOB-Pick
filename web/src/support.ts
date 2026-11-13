@@ -48,11 +48,20 @@ export async function loadAdminSupport(){
       input.value=row.reply;input.maxLength=5000;input.rows=4;input.setAttribute('aria-label','고객센터 답변');label.append(input);button.type='button';
       button.onclick=()=>void action(button,'admin-support-status',async()=>{requireUser();await rpc('reply_support_ticket',{p_id:row.id,p_reply:input.value.trim()});await loadAdminSupport();message('admin-support-status','답변을 저장했습니다.');});
       body.append(label,button);el('admin-support-list').append(card);
+      const edit=node('button','문의 수정','secondary'),host=node('div');edit.type='button';body.append(edit,host);
+      edit.onclick=()=>{
+        if(host.children.length){host.hidden=!host.hidden;return;}
+        const form=node('form','','portal-form moderation-editor'),categoryLabel=node('label','문의 종류'),category=node('select');
+        for(const [value,text]of Object.entries(categories)){const option=node('option',text);option.value=value;category.append(option);}category.value=row.category;categoryLabel.append(category);
+        const subjectLabel=node('label','문의 제목'),subject=node('input'),contentLabel=node('label','문의 본문'),content=node('textarea'),save=node('button','수정 저장');subject.value=row.subject;subject.maxLength=120;subject.required=true;content.value=row.body;content.maxLength=5000;content.rows=5;content.required=true;subjectLabel.append(subject);contentLabel.append(content);form.append(categoryLabel,subjectLabel,contentLabel,save);
+        form.onsubmit=event=>{event.preventDefault();void action(save,'admin-support-status',async()=>{const actor=requireUser().id;await rpc('admin_edit_support_ticket',{p_id:row.id,p_category:category.value,p_subject:subject.value,p_body:content.value,p_expected_revision:row.revision,p_expected_actor:actor});await loadAdminSupport();message('admin-support-status','문의 내용을 수정했습니다.');});};host.append(form);host.hidden=false;
+      };
     }
     message('admin-support-status',data?.length?'':'접수된 고객센터 문의가 없어요.');
   }catch(error){if(mine===adminVersion&&admin)message('admin-support-status',friendly(error));}
 }
 export function initSupport(){
+  let identity='';
   (el('support-form') as HTMLFormElement).onsubmit=event=>{
     event.preventDefault();void action(el('support-submit'),'support-status',async()=>{
       const who=requireUser().id,subject=(el('support-subject') as HTMLInputElement).value.trim(),body=(el('support-body') as HTMLTextAreaElement).value.trim();
@@ -62,5 +71,5 @@ export function initSupport(){
     });
   };
   el('support-reload').onclick=()=>void loadSupport();el('admin-support-reload').onclick=()=>void loadAdminSupport();
-  window.addEventListener('identity-changed',()=>{version++;adminVersion++;el('support-list').replaceChildren();el('admin-support-list').replaceChildren();if(!user){(el('support-form') as HTMLFormElement).reset();message('support-status','');}if(location.hash==='#support')void loadSupport();});
+  window.addEventListener('identity-changed',()=>{const next=(user?.id??'')+':'+admin;if(identity===next)return;identity=next;version++;adminVersion++;el('support-list').replaceChildren();el('admin-support-list').replaceChildren();if(!user){(el('support-form') as HTMLFormElement).reset();message('support-status','');}if(location.hash==='#support')void loadSupport();});
 }

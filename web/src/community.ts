@@ -2,8 +2,8 @@ import {client,rpc} from './supabase';
 import {user,admin,requireUser} from './auth';
 import {action,date,el,input,message,node,friendly} from './ui';
 
-type Post={id:string;user_id:string;title:string;body:string;author_name:string;created_at:string};
-let offset=0,version=0,editing:string|null=null,memberId:string|null=null;
+type Post={id:string;user_id:string;title:string;body:string;author_name:string;created_at:string;revision:number};
+let offset=0,version=0,editing:Post|null=null,memberId:string|null=null;
 const expanded=new Set<string>();
 
 function clearEditor(){
@@ -11,7 +11,7 @@ function clearEditor(){
   el('post-editor').hidden=true;el('post-compose').setAttribute('aria-expanded','false');
 }
 function openEditor(post?:Post){
-  editing=post?.id??null;
+  editing=post??null;
   el<HTMLInputElement>('post-title').value=post?.title??'';
   el<HTMLTextAreaElement>('post-body').value=post?.body??'';
   el('post-editor-title').textContent=post?'게시글 수정':'동네 이야기를 들려주세요';
@@ -35,20 +35,16 @@ export async function loadPosts(){
       toggle.append(avatar,overview,chevron);
       const body=node('div','','post-body');body.append(node('p',row.body));
       const actions=node('div','','button-row post-actions');
-      if(row.user_id===user?.id){
-        const edit=node('button','수정','secondary');edit.type='button';edit.onclick=()=>openEditor(row);actions.append(edit);
+      if(user&&(row.user_id===user.id||admin)){
+        const edit=node('button',row.user_id===user.id?'수정':'관리자 수정','secondary');edit.type='button';edit.onclick=()=>openEditor(row);actions.append(edit);
       }
       if(user&&(row.user_id===user.id||admin)){
         const own=row.user_id===user.id,remove=node('button',own?'삭제':'관리자 삭제','danger secondary');remove.type='button';
         remove.onclick=()=>{
-          if(!confirm(own?'이 게시글을 삭제할까요?':'다른 회원의 게시글을 삭제할까요?'))return;
+          if(!confirm((own?'이 게시글을 삭제할까요?':'다른 회원의 게시글을 삭제할까요?')+' 삭제한 글은 관리자 처리 내역에 보관됩니다.'))return;
           void action(remove,'post-status',async()=>{
-            const who=requireUser();let query=client().from('posts').delete().eq('id',row.id);
-            // RLS is authoritative. An admin must not be restricted to their own author ID.
-            if(!admin)query=query.eq('user_id',who.id);
-            const {data,error}=await query.select('id');if(error)throw error;
-            if(!data?.length)throw Error('이미 삭제되었거나 삭제 권한이 없는 글이에요. 목록을 새로 확인해 주세요.');
-            expanded.delete(row.id);if(editing===row.id)clearEditor();await loadPosts();message('post-status','게시글을 삭제했습니다.');
+            const who=requireUser();await rpc('set_post_visibility',{p_id:row.id,p_deleted:true,p_expected_revision:row.revision,p_expected_actor:who.id});
+            expanded.delete(row.id);if(editing?.id===row.id)clearEditor();await loadPosts();message('post-status','게시글을 삭제했습니다.');
           });
         };actions.append(remove);
       }
@@ -75,9 +71,10 @@ export function initCommunity(){
       const who=requireUser(),values={title:input('post-title'),body:input('post-body')};
       if(!values.title||!values.body)throw Error('제목과 내용을 입력해 주세요.');
       if(editing){
-        const {data,error}=await client().from('posts').update(values).eq('id',editing).eq('user_id',who.id).select('id');
-        if(error)throw error;if(!data?.length)throw Error('이미 삭제되었거나 수정할 수 없는 글이에요. 목록을 새로 확인해 주세요.');
-        expanded.add(editing);
+        if(editing.user_id!==who.id)await rpc('admin_edit_post',{p_id:editing.id,p_title:values.title,p_body:values.body,p_expected_revision:editing.revision,p_expected_actor:who.id});
+        else{const {data,error}=await client().from('posts').update(values).eq('id',editing.id).eq('user_id',who.id).eq('revision',editing.revision).select('id');
+          if(error)throw error;if(!data?.length)throw Error('이미 삭제되었거나 변경된 글이에요. 목록을 새로 확인해 주세요.');}
+        expanded.add(editing.id);
       }else{
         const {error}=await client().from('posts').insert({...values,user_id:who.id});if(error)throw error;
       }

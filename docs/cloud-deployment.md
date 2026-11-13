@@ -128,6 +128,18 @@ on conflict(user_id) do nothing;
 
 공개 게시글·프로필의 RLS는 `account_content_visible(UUID)`로 공개 가능 여부만 확인합니다. 이 함수는 이메일·탈퇴 시각·회원 정보를 반환하지 않으며 존재하지 않는 UUID도 공개 가능 값으로 처리합니다. [Public Can Execute SECURITY DEFINER Function](https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable) 안내는 공개 RLS에서 이 제한된 definer 함수를 사용하는 의도된 설정입니다. 탈퇴·복원 상태와 처리 시각은 본인 조회 또는 서버 전용 RPC에만 제공합니다.
 
+## 인기 음식점·관리 내역 (2026-11-13)
+
+메인 하단에 검색 결과 횟수·방문 표시 회원 수·찜 회원 수 상위 음식점 세 곳을 각각 보여줍니다. 이 집계는 인기 표시 전용이며 수동·AI 추천의 후보·정렬·추첨 로직에 반영하지 않습니다. 기존 개인 취향 기능은 유지합니다.
+
+검색 횟수는 로그인 회원의 실제 추천·조건검색 결과가 `save_recommendation_history`에 새로 저장된 횟수입니다. 새 statement trigger의 transition rows로 가게별 익명 합계를 더하며, 같은 이벤트의 네트워크 재시도는 중복 집계하지 않습니다. 기능 도입 전 데이터나 비회원 검색은 집계하지 않으며 화면에 실제 집계 시작일을 표시합니다. 개인 기록이 100건 제한으로 정리되거나 회원이 기록 삭제·탈퇴해도 회원키 없는 가게별 합계는 유지합니다. 방문·찜은 가게별 회원을 중복 제거해 집계하며 탈퇴 중·삭제·차단·익명 계정, 비활성 가게·메뉴를 제외합니다. `site_popularity()`는 가게 공개 정보와 합계만 공개하며 투표한 회원 정보는 반환하지 않습니다.
+
+관리자의 ‘승인 및 처리 내역’을 ‘문의 내역’과 ‘커뮤니티 내역’으로 나눕니다. 문의에는 음식점 신청·검토 내역과 비공개 고객센터 문의가 포함됩니다. 반려·대기 문의의 필드를 폼으로 수정하고 반려 건은 승인 대기로 돌려 다시 심사할 수 있습니다. 승인된 원문 payload 변경은 차단하고 새 정보 수정 신청으로 처리하여 승인 없이 음식점 정보가 바뀌지 않도록 합니다. 처리 사유·문의 메시지·고객센터 문의는 관리자 수정이 가능합니다.
+
+게시글 삭제는 공개 목록에서 숨기는 방식으로 바뀌며, 관리자 검색에서 공개·삭제 상태별로 조회·수정·복원합니다. 삭제한 글을 수정하는 것만으로 공개하지 않습니다. 모든 수정 RPC는 현재 관리자·활성 계정, 예상 회원키와 행 revision을 검사합니다. 관리자 변경 이력에는 본문·메시지를 복제하지 않고 상태·revision만 남깁니다. 탈퇴 유예 종료 시 숨긴 원문도 계정 파기와 함께 실제 삭제됩니다. 이 기능 적용 전에 영구 삭제된 글은 복구할 수 없습니다.
+
+마이그레이션 두 개를 먼저 적용하고 웹을 배포합니다. 구버전의 게시글 hard-delete 요청은 권한 오류로 거부되며, 새 클라이언트는 `set_post_visibility`를 호출합니다. `search_posts`는 revision 열을 추가하며 공개 검색에서 숨긴 글을 반환하지 않습니다. 운영 검증은 집계·권한 읽기만 수행하고 실제 회원의 문의나 글을 수정·삭제하지 않습니다.
+
 ## 네이버 지도
 
 Naver Cloud Maps 애플리케이션의 Web 서비스 URL에 운영 origin을 추가하고 공개 client ID를 `VITE_NAVER_MAP_CLIENT_ID`에 설정합니다. 네이버 길찾기는 별도로 사용할 수 있으며 출발지에 임의 위치를 넣지 않습니다.
@@ -140,6 +152,6 @@ Naver Cloud Maps 애플리케이션의 Web 서비스 URL에 운영 origin을 추
 
 GitHub Actions는 웹 빌드·Edge 타입 검사·PostgreSQL/RLS·브라우저 테스트를 수행합니다. 로컬 대역 테스트와 실제 운영 메일·Gemini 모델 권한·지도 인증의 검증은 구분합니다. 실제 계정으로 가입·찜 재접속·신청·관리자 처리·AI 추천·휴대폰 접속을 확인합니다.
 
-2026-11-12 추가 검증은 PostgreSQL/RLS·추천·정산·탈퇴·길찾기 40개와 브라우저 29개입니다. 가입 후 안내의 저장·건너뛰기·이메일 확인 후 안내·계정 간 접근 차단·기존 취향 보존·모바일 바로가기를 포함합니다. 브라우저의 새 AI·탈퇴 경로는 운영과 같은 공유 처리 함수를 호출하며 외부 Gemini와 Auth 전송만 로컬 대역으로 대체합니다. 운영에서는 마이그레이션 13개, AI v4·탈퇴 v2 배포와 음식점/메뉴 수, 정산의 서버 전용 권한, 취향·기록·답변의 직접 쓰기 차단을 별도로 확인합니다.
+2026-11-13 검증 범위는 PostgreSQL/RLS·추천·정산·탈퇴·길찾기 44개와 브라우저 32개입니다. 삭제 원문 수정·별도 복원·반려 문의 재검토·동시 수정 방지·관리자 전용 권한·익명 집계·중복 제거·모바일 표시를 추가로 확인합니다. 가입 후 안내의 저장·건너뛰기·이메일 확인 후 안내·계정 간 접근 차단·기존 취향 보존·모바일 바로가기도 포함합니다. 브라우저의 AI·탈퇴 경로는 운영과 같은 공유 처리 함수를 호출하며 외부 Gemini와 Auth 전송만 로컬 대역으로 대체합니다. 운영에서는 마이그레이션 15개, AI v4·탈퇴 v2 배포와 음식점/메뉴 수, 정산의 서버 전용 권한, 취향·기록·답변의 직접 쓰기 차단을 별도로 확인합니다.
 
 Supabase 보안 점검의 [인증 사용자 definer 함수 안내](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable)는 본인·관리자 검사를 거치는 의도된 API입니다. [정책 없는 RLS](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy)는 private 내부 테이블의 직접 접근 차단이며, 새 인덱스의 [미사용 안내](https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index)는 아직 사용 이력이 없다는 의미입니다. 기존 Auth의 [유출 비밀번호 검사 설정 안내](https://supabase.com/docs/guides/database/database-linter?lint=auth_leaked_password_protection)는 이번 배포에서 변경하지 않습니다.

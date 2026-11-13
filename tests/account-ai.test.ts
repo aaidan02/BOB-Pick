@@ -186,11 +186,16 @@ test('permanent erasure cascades private data, removes posts and preserves anony
   const id=crypto.randomUUID();await db.query('insert into auth.users(id,email) values($1,$2)',[id,'delete@example.test']);
   const menu=(await db.query<any>("select id from menus where restaurant_id='15779' and name='대구탕' limit 1")).rows[0];
   await actor(id,'authenticated',async tx=>{await tx.query('insert into favorites(user_id,menu_id) values($1,$2)',[id,menu.id]);await tx.query("insert into posts(user_id,title,body) values($1,'삭제할 글','내용')",[id]);await tx.query("insert into support_tickets(user_id,category,subject,body) values($1,'account','탈퇴 문의','내용')",[id]);});
+  const hidden=(await db.query<any>("select id from posts where user_id=$1",[id])).rows[0].id;
+  await rpc(id)('set_post_visibility',{p_id:hidden,p_deleted:true,p_expected_revision:1});
+  await rpc(ADMIN)('admin_edit_post',{p_id:hidden,p_title:'삭제 보관글',p_body:'영구 파기할 숨긴 원문',p_expected_revision:2});
   await rpc(id)('save_recommendation_history',{p_event_id:crypto.randomUUID(),p_source:'manual',p_filter:{},p_items:[{restaurantId:'15779',menuId:menu.id}]});
   const request=await rpc(id)('submit_request',{p_kind:'correction',p_restaurant_id:'15779',p_payload:{phone:'042-123-4567'},p_message:'개인 문의 메시지'});
   assert.equal((await rpc(id)('account_deletion_status')).allowed,true);await db.query('delete from auth.users where id=$1',[id]);
   for(const table of ['profiles','food_preferences','favorites','recommendation_history','support_tickets','posts'])assert.equal((await db.query<any>(`select count(*) n from ${table} where ${table==='profiles'?'id':'user_id'}=$1`,[id])).rows[0].n,0,table);
   const retained=(await db.query<any>('select user_id,message from requests where id=$1',[request])).rows[0];assert.equal(retained.user_id,null);assert.equal(retained.message,'');
+  assert.equal((await db.query<any>('select * from posts where id=$1',[hidden])).rows.length,0);
+  assert(!JSON.stringify((await db.query<any>('select before_data,after_data from change_logs where entity_id=$1',[hidden])).rows).includes('영구 파기할 숨긴 원문'));
   assert.equal((await rpc(MASTER)('account_deletion_status')).allowed,false);await assert.rejects(()=>db.query('delete from auth.users where id=$1',[MASTER]),/마스터/);
 });
 test('withdrawal and restoration require confirmation, the same account and a current password',async()=>{

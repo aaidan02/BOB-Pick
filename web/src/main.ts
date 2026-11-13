@@ -9,6 +9,8 @@ import {initLegal} from './legal';
 import {initAiQuota} from './ai-quota';
 import './theme.css';
 import './account.css';
+import './popularity.css';
+import {initPopularity} from './popularity';
 
 async function loadPromotions(){
   if(!db)return;
@@ -41,6 +43,7 @@ async function start(){
   }
   await initPortal().catch(error=>{el('auth-status').textContent=friendly(error);});
   await import('./legacy.js');
+  initPopularity();
   void loadPromotions();
 }
 void start();

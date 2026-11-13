@@ -67,8 +67,8 @@ async function loadHistory(reset:boolean){
       header.append(badge,node('small',date(row.created_at)));card.append(header,node('h3',row.menu_name),node('p',row.restaurant_name),node('strong',price(row),'history-price'));
       const actions=node('div','','button-row'),visit=node('button',row.visited_at?'✓ 다녀왔어요':'다녀왔어요','secondary'),remove=node('button','삭제','text-button');
       visit.type=remove.type='button';visit.setAttribute('aria-pressed',String(!!row.visited_at));
-      visit.onclick=()=>void action(visit,'history-status',async()=>{await rpc('set_history_visit',{p_id:row.id,p_visited:!row.visited_at});if(user?.id!==who)return;await loadHistory(true);await loadPreferences();void loadAccountOverview();});
-      remove.onclick=()=>void action(remove,'history-status',async()=>{const {error}=await client().from('recommendation_history').delete().eq('id',row.id).eq('user_id',who);if(error)throw error;if(user?.id!==who)return;await loadHistory(true);await loadPreferences();void loadAccountOverview();});
+      visit.onclick=()=>void action(visit,'history-status',async()=>{await rpc('set_history_visit',{p_id:row.id,p_visited:!row.visited_at});window.dispatchEvent(new Event('site-activity-changed'));if(user?.id!==who)return;await loadHistory(true);await loadPreferences();void loadAccountOverview();});
+      remove.onclick=()=>void action(remove,'history-status',async()=>{const {error}=await client().from('recommendation_history').delete().eq('id',row.id).eq('user_id',who);if(error)throw error;window.dispatchEvent(new Event('site-activity-changed'));if(user?.id!==who)return;await loadHistory(true);await loadPreferences();void loadAccountOverview();});
       const map=node('a','길찾기 ↗','inline-link');map.href=directionsUrl({name:row.restaurant_name,address:row.address,latitude:row.latitude,longitude:row.longitude});map.target='_blank';map.rel='noopener noreferrer';
       actions.append(visit,map,remove);card.append(actions);el('history-list').append(card);
     }
@@ -100,8 +100,8 @@ export function initAccount(){
   el('onboarding-skip').onclick=()=>void finishOnboarding(false);
   el<HTMLDialogElement>('taste-onboarding').oncancel=event=>{event.preventDefault();void finishOnboarding(false);};
   for(const button of document.querySelectorAll<HTMLButtonElement>('[data-account-open]'))button.onclick=()=>selectTab(button.dataset.accountOpen!);
-  document.querySelector('.account-tabs')!.addEventListener('keydown',event=>{
-    const key=(event as KeyboardEvent).key,buttons=[...document.querySelectorAll<HTMLButtonElement>('.account-tabs button')],index=buttons.indexOf(document.activeElement as HTMLButtonElement);
+  document.querySelector('#member-box .account-tabs')!.addEventListener('keydown',event=>{
+    const key=(event as KeyboardEvent).key,buttons=[...document.querySelectorAll<HTMLButtonElement>('#member-box .account-tabs button')],index=buttons.indexOf(document.activeElement as HTMLButtonElement);
     if(index<0||!['ArrowLeft','ArrowRight','Home','End'].includes(key))return;
     event.preventDefault();const next=key==='Home'?0:key==='End'?buttons.length-1:(index+(key==='ArrowRight'?1:-1)+buttons.length)%buttons.length;
     buttons[next].focus();selectTab(buttons[next].dataset.accountOpen!);
@@ -115,7 +115,7 @@ export function initAccount(){
   el('history-kind').onchange=()=>void loadHistory(true);el('history-reload').onclick=()=>void loadHistory(true);el('history-more').onclick=()=>void loadHistory(false);
   el('history-clear').onclick=()=>{
     if(!confirm('추천·방문 기록을 모두 삭제할까요?'))return;
-    void action(el('history-clear'),'history-status',async()=>{const who=requireUser().id;const {error}=await client().from('recommendation_history').delete().eq('user_id',who);if(error)throw error;if(user?.id!==who)return;await loadHistory(true);await loadPreferences();void loadAccountOverview();});
+    void action(el('history-clear'),'history-status',async()=>{const who=requireUser().id;const {error}=await client().from('recommendation_history').delete().eq('user_id',who);if(error)throw error;window.dispatchEvent(new Event('site-activity-changed'));if(user?.id!==who)return;await loadHistory(true);await loadPreferences();void loadAccountOverview();});
   };
   (el('password-form') as HTMLFormElement).onsubmit=event=>{
     event.preventDefault();void action(el('password-save'),'password-status',async()=>{
@@ -146,7 +146,7 @@ export function initAccount(){
     const who=user?.id;if(!who)return;
     const detail=(event as CustomEvent).detail;
     void rpc('save_recommendation_history',{p_event_id:detail.eventId,p_source:detail.source,p_filter:detail.filter,p_items:detail.items,p_user_id:who})
-      .then(()=>{if(user?.id===who){void loadAccountOverview();if(tab==='history')void loadHistory(true);}})
+      .then(()=>{window.dispatchEvent(new Event('site-activity-changed'));if(user?.id===who){void loadAccountOverview();if(tab==='history')void loadHistory(true);}})
       .catch(()=>{if(user?.id===who)message('history-status','추천은 완료했지만 기록을 저장하지 못했어요.');});
   });
 }

@@ -26,6 +26,7 @@ async function toggle(menuId:string){
     const removing=saved.has(menuId);
     const result=removing?await client().from('favorites').delete().eq('user_id',who.id).eq('menu_id',menuId):await client().from('favorites').insert({user_id:who.id,menu_id:menuId});
     if(result.error&&result.error.code!=='23505')throw result.error;
+    window.dispatchEvent(new Event('site-activity-changed'));
     if(user?.id===who.id){if(removing)saved.delete(menuId);else saved.add(menuId);if(location.hash==='#favorites'){offset=0;await loadFavorites();}}
   }finally{pending.delete(menuId);paintFavorites();}
 }

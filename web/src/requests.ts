@@ -2,7 +2,8 @@ import {client,rpc} from './supabase';
 import {admin,user,requireUser} from './auth';
 import {action,date,el,input,message,node,friendly} from './ui';
 import {loadAdminAccounts} from './admin-accounts';
-const labels:Record<string,string>={correction:'정보 수정',registration:'음식점 등록',promotion:'홍보',pending:'대기',approved:'승인',rejected:'반려',admin:'관리자 권한',granted:'추가',revoked:'해제',master_assigned:'마스터 지정'};
+import {attachAdminInquiryEditor} from './admin-inquiry-editor';
+const labels:Record<string,string>={correction:'정보 수정',registration:'음식점 등록',promotion:'홍보',pending:'대기',approved:'승인',rejected:'반려',admin:'관리자 권한',granted:'추가',revoked:'해제',master_assigned:'마스터 지정',request:'문의',post:'게시글',support:'고객센터',edited:'수정',reopened:'재검토',deleted:'삭제',restored:'복원',answered:'답변'};
 const fieldLabels:Record<string,string>={name:'음식점 이름',address:'주소',phone:'전화번호',latitude:'위도',longitude:'경도',categories:'음식 종류',forms:'음식 형태',hours_text:'영업시간',hours_display:'영업시간',title:'홍보 제목',content:'홍보 내용',ends_at:'종료일',active:'추천 대상',price:'가격',variable_price:'변동가격'};
 type StoreOption={id:string;name:string;address:string};
 let stores:StoreOption[]=[],storesLoaded=false,storeLoad:Promise<void>|null=null;
@@ -122,10 +123,10 @@ export async function loadAdmin(){
         try{await rpc('review_request',{p_request_id:row.id,p_decision:decision,p_note:note.value.trim()});await loadAdmin();message('admin-status','처리했습니다.');}
         finally{approve.disabled=false;reject.disabled=false;}
       });
-      actions.append(approve,reject);card.append(noteLabel,actions);el('admin-pending').append(card);
+      actions.append(approve,reject);card.append(noteLabel,actions);attachAdminInquiryEditor(card,row,loadAdmin);el('admin-pending').append(card);
     }
     if(!results[0].data?.length)el('admin-pending').append(node('p','대기 중인 신청이 없습니다.'));
-    for(const row of results[1].data??[])el('admin-reviews').append(requestCard(row));
+    for(const row of results[1].data??[]){const card=requestCard(row);attachAdminInquiryEditor(card,row,loadAdmin);el('admin-reviews').append(card);}
     if(!results[1].data?.length)el('admin-reviews').append(node('p','아직 처리한 신청이 없어요.','empty-state'));
     for(const row of results[2].data??[]){
       const card=node('article','','list-card'),parts=row.action.split(':');card.append(node('h3',(labels[parts[0]]??'정보 변경')+' · '+(labels[parts[1]]??'처리 완료')),node('small',date(row.created_at)));
@@ -143,6 +144,7 @@ export async function loadAdmin(){
   }catch(error){if(mine===adminVersion)message('admin-status',friendly(error));}
 }
 export function initRequests(){
+  let identity='';
   priceStep(el<HTMLInputElement>('request-menu-price'));
   const categories=el<HTMLSelectElement>('request-category');for(const item of el<HTMLSelectElement>('category').options)if(item.value)option(categories,item.value,item.text);
   el('request-kind').onchange=changeKind;changeKind();
@@ -191,5 +193,5 @@ export function initRequests(){
       el<HTMLFormElement>('request-form').reset();el('request-menu-rows').replaceChildren();changeKind();await loadRequests();message('request-status','신청을 접수했습니다.');
     });
   };
-  window.addEventListener('identity-changed',()=>{requestVersion++;adminVersion++;message('request-list-status','');el('request-list').replaceChildren();el('admin-pending').replaceChildren();el('admin-reviews').replaceChildren();el('admin-logs').replaceChildren();if(location.hash==='#requests')void loadRequests();});
+  window.addEventListener('identity-changed',()=>{const next=(user?.id??'')+':'+admin;if(identity===next)return;identity=next;requestVersion++;adminVersion++;message('request-list-status','');el('request-list').replaceChildren();el('admin-pending').replaceChildren();el('admin-reviews').replaceChildren();el('admin-logs').replaceChildren();if(location.hash==='#requests')void loadRequests();});
 }

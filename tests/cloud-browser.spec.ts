@@ -2,6 +2,52 @@ import {test,expect} from '@playwright/test';
 import {legacyRecommendation} from '../supabase/functions/_shared/recommendation';
 import {naverMapSdkFixture} from './naver-sdk-fixture';
 import {hasMapCoordinates} from '../web/src/naver';
+
+test('administrator records split inquiries from community, edit hidden posts without republishing and explicitly restore them',async({page,browser})=>{
+  await signupMember(page,'moderation-post@example.test');await page.locator('.service-nav a[href="#community"]').click();await page.locator('#post-compose').click();await page.locator('#post-title').fill('삭제 원문 관리자 편집');await page.locator('#post-body').fill('보관할 원문');await page.locator('#post-save').click();await expect(page.locator('#post-status')).toHaveText('게시글을 저장했습니다.');
+  const card=page.locator('#post-list .post-card').filter({hasText:'삭제 원문 관리자 편집'});await card.locator('summary').click();page.once('dialog',d=>d.accept());await card.getByRole('button',{name:'삭제',exact:true}).click();await expect(card).toHaveCount(0);
+  const context=await browser.newContext(),staff=await context.newPage();try{
+    await staff.route('https://oapi.map.naver.com/**',r=>r.abort());await login(staff,'admin@example.test');await staff.locator('#admin-link').click();
+    await expect(staff.locator('#admin-records-inquiries')).toBeVisible();await staff.getByRole('tab',{name:'커뮤니티 내역'}).click();await expect(staff.locator('#admin-records-inquiries')).toBeHidden();
+    await staff.locator('#admin-post-state').selectOption('deleted');await staff.locator('#admin-post-search').fill('삭제 원문 관리자 편집');
+    const entry=staff.locator('#admin-post-list .admin-post-card');await expect(entry).toHaveCount(1);await entry.locator('summary').click();await entry.getByRole('button',{name:'내용 수정'}).click();
+    await expect(staff.locator('#admin-post-editor-hint')).toContainText('수정해도 공개되지 않으며');await staff.locator('#admin-post-title').fill('관리자가 정정한 삭제글');await staff.locator('#admin-post-body').fill('<img src=x onerror=alert(1)> 안전한 정정 내용');
+    await staff.locator('#admin-post-save').click();await expect(staff.locator('#admin-post-status')).toHaveText('게시글을 수정했습니다.');
+    await page.locator('#post-reload').click();await page.locator('#post-search').fill('관리자가 정정한 삭제글');await expect(page.locator('#post-list .post-card')).toHaveCount(0);
+    await staff.locator('#admin-post-search').fill('관리자가 정정한 삭제글');await expect(entry).toContainText('삭제됨');await entry.locator('summary').click();await expect(entry.locator('img')).toHaveCount(0);
+    for(const width of [390,320]){await staff.setViewportSize({width,height:844});expect(await staff.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}await staff.screenshot({path:'build/admin-records-mobile.png',fullPage:true});
+    staff.once('dialog',d=>d.accept());await entry.getByRole('button',{name:'복원',exact:true}).click();await expect(staff.locator('#admin-post-status')).toHaveText('게시글을 복원했습니다.');await expect(entry).toHaveCount(0);
+    await page.locator('#post-reload').click();const publicCard=page.locator('#post-list .post-card');await expect(publicCard).toContainText('관리자가 정정한 삭제글');await publicCard.locator('summary').click();await expect(publicCard.locator('.post-body')).toContainText('안전한 정정 내용');await expect(publicCard.locator('img')).toHaveCount(0);
+    await staff.getByRole('tab',{name:'문의 내역'}).click();await expect(staff.locator('#admin-records-inquiries')).toBeVisible();await expect(staff.locator('#admin-records-community')).toBeHidden();
+  }finally{await context.close();}
+});
+
+test('administrator edits a rejected inquiry and reason, reopens it and applies the amended catalog only on approval',async({page,browser})=>{
+  await signupMember(page,'moderation-inquiry@example.test');await page.locator('.service-nav a[href="#requests"]').click();await page.locator('#request-search').fill('15779');await expect(page.locator('#request-target option')).toHaveCount(2);await page.locator('#request-target').selectOption('15779');await page.locator('#request-phone').fill('042-EDIT-BEFORE');await page.locator('#request-message').fill('반려 수정 재승인 테스트');await page.locator('#request-submit').click();await expect(page.locator('#request-status')).toHaveText('신청을 접수했습니다.');
+  const context=await browser.newContext(),staff=await context.newPage();try{
+    await staff.route('https://oapi.map.naver.com/**',r=>r.abort());await login(staff,'admin@example.test');await staff.locator('#admin-link').click();
+    const pending=staff.locator('#admin-pending .list-card').filter({hasText:'반려 수정 재승인 테스트'});await pending.locator('textarea').fill('처음 반려 이유');await pending.getByRole('button',{name:'반려',exact:true}).click();await expect(staff.locator('#admin-status')).toHaveText('처리했습니다.');
+    const rejected=staff.locator('#admin-reviews .list-card').filter({hasText:'반려 수정 재승인 테스트'});await rejected.getByRole('button',{name:'내용 수정'}).click();await rejected.getByRole('textbox',{name:'전화번호',exact:true}).fill('042-EDIT-AFTER');await rejected.getByRole('textbox',{name:'처리 사유',exact:true}).fill('정정된 반려 사유');await rejected.getByRole('button',{name:'수정 저장'}).click();await expect(staff.locator('#admin-status')).toHaveText('문의 내용을 수정했습니다.');
+    await page.locator('#request-reload').click();const own=page.locator('#request-list .list-card').filter({hasText:'반려 수정 재승인 테스트'});await expect(own).toContainText('정정된 반려 사유');await expect(own).toContainText('반려');
+    await rejected.getByRole('button',{name:'승인 대기로 돌리기'}).click();await expect(staff.locator('#admin-status')).toHaveText('승인 대기로 변경했습니다.');await expect(pending).toBeVisible();await pending.getByRole('button',{name:'승인',exact:true}).click();await expect(staff.locator('#admin-status')).toHaveText('처리했습니다.');
+    const applied=await (await page.request.get('http://127.0.0.1:54329/rest/v1/restaurants?id=eq.15779&select=phone')).json();expect(applied[0].phone).toBe('042-EDIT-AFTER');await page.locator('#request-reload').click();await expect(own).toContainText('승인');
+  }finally{await context.close();}
+});
+
+test('public popularity lists show real result counts and member visits or favorites, link to the store and fit mobile',async({page})=>{
+  const signed=page.waitForResponse(r=>r.url().includes('/auth/v1/signup'));await signupMember(page,'popularity-ui@example.test');const token=(await (await signed).json()).access_token,api='http://127.0.0.1:54329/rest/v1',headers={Authorization:'Bearer '+token};
+  const member=await (await page.request.get('http://127.0.0.1:54329/auth/v1/user',{headers})).json();
+  const menus=await (await page.request.get(api+'/menus?restaurant_id=eq.15779&select=id&limit=2')).json();
+  for(let i=0;i<6;i++){const saved=await page.request.post(api+'/rpc/save_recommendation_history',{headers,data:{p_event_id:crypto.randomUUID(),p_source:'manual',p_filter:{checkHours:false},p_items:[{restaurantId:'15779',menuId:menus[0].id}]}});expect(saved.ok()).toBe(true);}
+  await page.request.post(api+'/favorites',{headers,data:{user_id:member.id,menu_id:menus[0].id}});
+  await page.locator('#account-tab-history').click();const history=page.locator('#history-list .history-card').filter({hasText:'미향일식'}).first();await history.getByRole('button',{name:'다녀왔어요',exact:true}).click();
+  await page.locator('.brand').click();await page.locator('#popularity-reload').click();await expect(page.locator('#popularity-status')).toHaveText('');
+  for(const id of ['popular-searches','popular-visits','popular-favorites']){await expect(page.locator('#'+id)).toContainText('미향일식');const link=page.locator('#'+id+' a').filter({hasText:'미향일식'});await expect(link).toHaveAttribute('target','_blank');expect(await link.getAttribute('href')).toContain('map.naver.com');}
+  await expect(page.locator('#popular-started')).toContainText('부터 검색 집계');await expect(page.locator('#popular-searches .popular-total').first()).toContainText('회');
+  await page.locator('#popular-restaurants').scrollIntoViewIfNeeded();await page.screenshot({path:'build/popularity-desktop.png'});
+  for(const width of [390,320]){await page.setViewportSize({width,height:844});await page.locator('#popular-restaurants').scrollIntoViewIfNeeded();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}await page.screenshot({path:'build/popularity-mobile.png',fullPage:true});
+  await page.route('**/rest/v1/rpc/site_popularity',r=>r.fulfill({status:500,json:{message:'internal data'}}));await page.locator('#popularity-reload').click();await expect(page.locator('#popularity-status')).toContainText('불러오지 못했어요');await expect(page.locator('#popular-searches')).toContainText('미향일식');await expect(page.locator('#pick')).toBeEnabled();
+});
 test.beforeEach(async({page})=>{
   await page.route('https://oapi.map.naver.com/**',route=>route.abort());
   // Existing feature flows start after onboarding. Guide tests use clean contexts.

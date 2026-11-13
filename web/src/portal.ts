@@ -7,6 +7,7 @@ import {initRequests,loadRequests,loadAdmin} from './requests';
 import {el} from './ui';
 import {isLegalPage,showLegalPage} from './legal';
 import {initAdminAccounts} from './admin-accounts';
+import {adminCommunityMarkup,initAdminRecords} from './admin-records';
 
 export async function initPortal(){
   el('service-view').innerHTML=`
@@ -85,15 +86,18 @@ export async function initPortal(){
           <p id="admin-account-search-status" class="helper" role="status"></p><div id="admin-account-results"></div>
         </div><p id="admin-account-status" class="form-status" role="status"></p>
       </section>
+      <div class="admin-records"><h2>승인 및 처리 내역</h2><div class="moderation-tabs account-tabs" role="tablist" aria-label="관리 내역"><button id="admin-tab-inquiries" type="button" role="tab" aria-selected="true" aria-controls="admin-records-inquiries">문의 내역</button><button id="admin-tab-community" type="button" role="tab" aria-selected="false" aria-controls="admin-records-community">커뮤니티 내역</button></div>
+      <section id="admin-records-inquiries" role="tabpanel" aria-labelledby="admin-tab-inquiries">
       <section class="surface"><div class="section-head"><h2>승인 대기 <span id="admin-pending-count" class="status-badge">0</span></h2></div><div id="admin-pending"></div></section>
       <section class="surface"><h2>처리 내역</h2><div id="admin-reviews"></div></section>
       <section class="surface"><div class="section-head"><h2>고객센터 문의</h2><button id="admin-support-reload" type="button" class="secondary">새로고침</button></div><p id="admin-support-status" class="form-status" role="status"></p><div id="admin-support-list"></div></section>
+      </section><section id="admin-records-community" role="tabpanel" aria-labelledby="admin-tab-community" hidden>${adminCommunityMarkup()}</section></div>
       <details class="surface audit-section"><summary>변경 이력 보기</summary><div id="admin-logs"></div></details>
     </div>
   </section>`;
   el('account-art').prepend(document.querySelector('.hero-art')!.cloneNode(true));
   initAccount();initSupport();
-  initCommunity();initFavorites();initRequests();initAdminAccounts();
+  initCommunity();initFavorites();initRequests();initAdminAccounts();initAdminRecords();
   function route(){
     let page=location.hash.slice(1);
     if(isLegalPage(page)){showLegalPage(page);return;}
@@ -117,11 +121,12 @@ export async function initPortal(){
     document.title=service?titles[page]+' · 밥픽':'밥픽 · 오늘은 뭘 먹을까요?';
   }
   window.addEventListener('hashchange',route);
+  let adminIdentity='';
   window.addEventListener('identity-changed',()=>{
     if(accountRecovery)route();
     el('request-login').hidden=!!user;el('request-form').hidden=!user;
     el('request-reload').hidden=!user;el('admin-content').hidden=!admin;
-    if(location.hash==='#admin'){void loadAdmin();void loadAdminSupport();}
+    const identity=(user?.id??'')+':'+admin;if(location.hash==='#admin'&&adminIdentity!==identity){void loadAdmin();void loadAdminSupport();}adminIdentity=identity;
   });
   route();await initAuth();
 }

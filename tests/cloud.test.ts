@@ -80,11 +80,86 @@ test('posts are publicly searchable; only authors edit, and deletion is restrict
   await asUser(B,'authenticated',()=>db.query("update posts set title='다른 회원' where id=$1",[row.id]));
   assert.equal((await query('select title from posts where id=$1',[row.id]))[0].title,'대구탕 추천');
   await assert.rejects(()=>asUser(B,'authenticated',()=>db.query("insert into posts(user_id,title,body) values($1,'위조','위조')",[A])));
-  assert.deepEqual(await asUser(B,'authenticated',()=>query('delete from posts where id=$1 returning id',[row.id])),[]);
+  await assert.rejects(()=>asUser(B,'authenticated',()=>query('delete from posts where id=$1 returning id',[row.id])));
+  await assert.rejects(()=>asUser(B,'authenticated',()=>query('select set_post_visibility($1,true,$2)',[row.id,row.revision])),/권한/);
   await assert.rejects(()=>asUser(null,'anon',()=>db.query('delete from posts where id=$1',[row.id])));
   assert.deepEqual(await asUser(ADMIN,'authenticated',()=>query("update posts set title='관리자 수정' where id=$1 returning id",[row.id])),[]);
-  assert.deepEqual(await asUser(ADMIN,'authenticated',()=>query('delete from posts where id=$1 returning id',[row.id])),[{id:row.id}]);
-  assert.equal((await query('select * from posts where id=$1',[row.id])).length,0);
+  await asUser(ADMIN,'authenticated',()=>query('select set_post_visibility($1,true,$2)',[row.id,row.revision]));
+  assert.equal((await asUser(null,'anon',()=>query('select * from posts where id=$1',[row.id]))).length,0);
+  assert((await query('select deleted_at from posts where id=$1',[row.id]))[0].deleted_at);
+});
+test('deleted posts remain administrator-editable, require explicit restoration and reject stale revisions or actors',async()=>{
+  const post=(await asUser(A,'authenticated',()=>query("insert into posts(user_id,title,body) values($1,'관리 내역 테스트','원문은 공개') returning *",[A])))[0];
+  await asUser(A,'authenticated',()=>query('select set_post_visibility($1,true,1,$2)',[post.id,A]));
+  for(const actor of [A,B]){
+    await assert.rejects(()=>asUser(actor,'authenticated',()=>query("select * from admin_search_posts('관리 내역')")),/관리자 권한/);
+    await assert.rejects(()=>asUser(actor,'authenticated',()=>query("select admin_edit_post($1,'위조','위조',2)",[post.id])),/관리자 권한/);
+  }
+  await assert.rejects(()=>asUser(A,'authenticated',()=>query('select set_post_visibility($1,false,2)',[post.id])),/권한/);
+  await assert.rejects(()=>asUser(ADMIN,'authenticated',()=>query("select admin_edit_post($1,'수정','수정',2,$2)",[post.id,A])),/계정이 변경/);
+  await assert.rejects(()=>asUser(ADMIN,'authenticated',()=>query("select admin_edit_post($1,'수정','수정',1)",[post.id])),/다른 곳/);
+  await asUser(ADMIN,'authenticated',()=>query("select admin_edit_post($1,'관리자 수정 완료','<img src=x> 삭제글 수정 내용',2,$2)",[post.id,ADMIN]));
+  assert.equal((await asUser(null,'anon',()=>query("select * from search_posts('관리자 수정 완료')"))).length,0);
+  assert.equal((await asUser(A,'authenticated',()=>query('select * from posts where id=$1',[post.id]))).length,0);
+  const deleted=(await asUser(ADMIN,'authenticated',()=>query("select * from admin_search_posts('관리자 수정 완료','deleted')")))[0];
+  assert(deleted.deleted_at);assert.equal(deleted.revision,3);
+  await asUser(ADMIN,'authenticated',()=>query('select set_post_visibility($1,false,3,$2)',[post.id,ADMIN]));
+  const published=await asUser(null,'anon',()=>query("select * from search_posts('관리자 수정 완료')"));assert.equal(published[0].body,'<img src=x> 삭제글 수정 내용');
+  assert.equal((await asUser(ADMIN,'authenticated',()=>query("select * from admin_search_posts('관리자 수정 완료','deleted')"))).length,0);
+  const logs=await query('select before_data,after_data from change_logs where entity_id=$1',[post.id]);
+  assert.equal(logs.length,3);assert(!JSON.stringify(logs).includes('삭제글 수정 내용'));assert(!JSON.stringify(logs).includes('관리자 수정 완료'));
+});
+test('rejected requests can be edited and reopened before approval, but applied catalog payloads remain immutable',async()=>{
+  const rid='16122',original=(await query('select phone from restaurants where id=$1',[rid]))[0].phone;
+  const req=(await asUser(A,'authenticated',()=>query("select submit_request('correction',$1,$2,'다시 확인') id",[rid,{phone:'042-OLD'}])))[0].id;
+  await asUser(ADMIN,'authenticated',()=>query("select review_request($1,'rejected','전화번호 오류')",[req]));
+  const edit=(actor:string,revision:number,payload:any={phone:'042-NEW'},reopen=false)=>asUser(actor,'authenticated',()=>query('select admin_edit_request($1,$2,$3,$4,$5,$6,$7)',[req,payload,'확인한 문의 내용','정정한 처리 사유',revision,reopen,actor]));
+  await assert.rejects(()=>edit(B,2),/관리자 권한/);
+  await edit(ADMIN,2);assert.equal((await query('select phone from restaurants where id=$1',[rid]))[0].phone,original);
+  const own=(await asUser(A,'authenticated',()=>query('select * from requests where id=$1',[req])))[0];assert.equal(own.status,'rejected');assert.equal(own.payload.phone,'042-NEW');
+  assert.equal((await asUser(A,'authenticated',()=>query('select note from request_reviews where request_id=$1',[req])))[0].note,'정정한 처리 사유');
+  await assert.rejects(()=>edit(ADMIN,2),/다른 곳/);await edit(ADMIN,3,{phone:'042-NEW'},true);
+  assert.equal((await query('select status from requests where id=$1',[req]))[0].status,'pending');assert.equal((await query('select * from request_reviews where request_id=$1',[req])).length,0);
+  await asUser(ADMIN,'authenticated',()=>query("select review_request($1,'approved','재확인 완료')",[req]));assert.equal((await query('select phone from restaurants where id=$1',[rid]))[0].phone,'042-NEW');
+  await assert.rejects(()=>edit(ADMIN,5,{phone:'042-UNREVIEWED'}),/새 수정 신청/);await edit(ADMIN,5);
+  await assert.rejects(()=>edit(ADMIN,6,{phone:'042-NEW'},true),/반려한 문의만/);
+  const audit=await query("select before_data,after_data from change_logs where request_id=$1 and action like 'request:%'",[req]);assert.equal(audit.length,3);assert(!JSON.stringify(audit).includes('확인한 문의 내용'));assert(!JSON.stringify(audit).includes('042-NEW'));
+});
+test('support edits require a current administrator and revision, preserve answers and roll back on audit failure',async()=>{
+  const id=(await asUser(A,'authenticated',()=>query("insert into support_tickets(user_id,category,subject,body) values($1,'bug','문의 원제목','문의 원문') returning id",[A])))[0].id;
+  await asUser(ADMIN,'authenticated',()=>query("select reply_support_ticket($1,'기존 답변')",[id]));
+  await assert.rejects(()=>asUser(B,'authenticated',()=>query("select admin_edit_support_ticket($1,'general','위조','위조',2)",[id])),/관리자 권한/);
+  await assert.rejects(()=>asUser(ADMIN,'authenticated',()=>query("select admin_edit_support_ticket($1,'general','수정','수정',1)",[id])),/다른 곳/);
+  await db.exec("create function private.fail_test_edit() returns trigger language plpgsql as $$begin if new.action='support:edited' then raise exception 'audit failed';end if;return new;end$$;create trigger fail_test_edit before insert on change_logs for each row execute function private.fail_test_edit();");
+  try{await assert.rejects(()=>asUser(ADMIN,'authenticated',()=>query("select admin_edit_support_ticket($1,'general','수정','수정',2)",[id])),/audit failed/);}finally{await db.exec('drop trigger fail_test_edit on change_logs;drop function private.fail_test_edit();');}
+  assert.equal((await query('select revision from support_tickets where id=$1',[id]))[0].revision,2);
+  await asUser(ADMIN,'authenticated',()=>query("select admin_edit_support_ticket($1,'general','정정 제목','정정 내용',2,$2)",[id,ADMIN]));
+  const ticket=(await asUser(A,'authenticated',()=>query('select * from support_tickets where id=$1',[id])))[0];assert.equal(ticket.body,'정정 내용');assert.equal(ticket.reply,'기존 답변');assert.equal(ticket.status,'answered');
+});
+test('site popularity counts actual inserted events and distinct visiting or favoriting members without changing recommendations',async()=>{
+  const voters=[crypto.randomUUID(),crypto.randomUUID()],r='popularity-test';
+  for(const [i,v]of voters.entries())await query("insert into auth.users(id,email,email_confirmed_at) values($1,$2,now())",[v,`popularity${i}@example.test`]);
+  await query("insert into restaurants(id,name,address,categories,forms) values($1,'인기 집계 식당','둔산동',array['한식'],array['밥'])",[r]);
+  const menus=await query("insert into menus(restaurant_id,source_index,name,price,forms) values($1,0,'비빔밥',8000,array['밥']),($1,1,'볶음밥',9000,array['밥']) returning id",[r]);
+  const save=(actor:string,event=crypto.randomUUID())=>asUser(actor,'authenticated',()=>query("select save_recommendation_history($1,'manual',$2,$3,$4)",[event,noHours,[{restaurantId:r,menuId:menus[0].id}],actor]));
+  const event=crypto.randomUUID();await save(voters[0],event);await save(voters[0],event);await save(voters[0]);await save(voters[1]);
+  assert.equal((await query('select search_count from private.restaurant_search_counts where restaurant_id=$1',[r]))[0].search_count,3);
+  for(const actor of voters){
+    for(const history of await asUser(actor,'authenticated',()=>query('select id from recommendation_history')))await asUser(actor,'authenticated',()=>query('select set_history_visit($1,true)',[history.id]));
+    for(const menu of menus)await asUser(actor,'authenticated',()=>query('insert into favorites(user_id,menu_id) values($1,$2)',[actor,menu.id]));
+  }
+  const popularity=async()=>(await asUser(null,'anon',()=>query('select site_popularity() value')))[0].value;
+  let data=await popularity();for(const [kind,n]of [['searches',3],['visits',2],['favorites',2]]as const)assert.equal(data[kind].find((row:any)=>row.id===r).metric_count,n);
+  assert(Number.isFinite(new Date(data.startedAt).getTime()));for(const voter of voters)assert(!JSON.stringify(data).includes(voter));assert(!JSON.stringify(data).includes('@example.test'));
+  await assert.rejects(()=>asUser(voters[0],'authenticated',()=>query('select * from private.restaurant_search_counts')));
+  await asUser(voters[0],'authenticated',()=>query('delete from recommendation_history'));
+  data=await popularity();assert.equal(data.searches.find((row:any)=>row.id===r).metric_count,3);assert.equal(data.visits.find((row:any)=>row.id===r).metric_count,1);
+  const picks=(await asUser(null,'anon',()=>query('select pick_restaurants($1,1) value',[{...noHours,restaurantTerms:['인기 집계 식당']}])))[0].value;assert.equal(picks.restaurants[0].restaurant.id,r);
+  await asUser(null,'service_role',()=>query('select request_account_withdrawal($1)',[voters[1]]));
+  data=await popularity();assert(!data.visits.some((row:any)=>row.id===r));assert.equal(data.favorites.find((row:any)=>row.id===r).metric_count,1);
+  await asUser(null,'service_role',async()=>{});await query('delete from auth.users where id=any($1)',[voters]);
+  data=await popularity();assert.equal(data.searches.find((row:any)=>row.id===r).metric_count,3);assert(!data.favorites.some((row:any)=>row.id===r));
+  await query('update restaurants set active=false where id=$1',[r]);data=await popularity();assert(!data.searches.some((row:any)=>row.id===r));
 });
 test('admin account data and mutations reject anonymous users, members and forged metadata',async()=>{
   for(const [sql,args] of [['select * from admin_list_accounts()',[]],['select * from admin_search_accounts($1)',['example']],['select admin_set_membership($1,true)',[A]]] as const){

@@ -3,6 +3,13 @@
 .bob-theme .member-summary .member-heading{margin-bottom:22px}
 .bob-theme #member-email{margin:5px 0 0;overflow-wrap:anywhere}
 .bob-theme #account-recovery-email{overflow-wrap:anywhere}
+.bob-theme .admin-records>h2{font-size:22px;margin:26px 0 18px}
+.bob-theme .moderation-editor{padding:20px;margin-top:18px;border:1px solid #e2e5d6;border-radius:17px;background:#fafbf5;min-width:0}
+.bob-theme .admin-post-card>summary{cursor:pointer;padding:5px;list-style:none}
+.bob-theme .admin-post-card>summary::-webkit-details-marker{display:none}
+.bob-theme .admin-post-card h3{margin:0;font-size:18px;overflow-wrap:anywhere}
+.bob-theme .admin-post-card small{font-size:12px;color:#818573}
+.bob-theme .admin-post-card .post-body{padding:18px 5px 5px}
 .bob-theme .account-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
 .bob-theme .account-metrics :is(a,button){display:flex;flex-direction:column;align-items:flex-start;gap:7px;border:1px solid #e7e6d9;border-radius:17px;background:#f7f7ee;padding:17px 20px;color:#5c6850;font-size:12px;min-width:0;width:100%;text-align:left}
 .bob-theme .account-metrics strong{font-size:25px;color:#35452d}
@@ -60,6 +67,9 @@
 .bob-theme .support-faq summary{cursor:pointer;font-weight:650;font-size:15px}
 .bob-theme .support-faq details p{padding:13px 4px 0;font-size:14px;color:#79816e;line-height:1.9}
 .bob-theme .support-card{margin-top:16px}
+.bob-theme .moderation-choices{display:flex;flex-wrap:wrap;gap:10px 16px;min-width:0;margin:8px 0;padding:14px;border:1px solid var(--line);border-radius:14px}
+.bob-theme .moderation-choices legend{font-size:13px;padding:0 6px}
+.bob-theme .moderation-choices .checkbox{display:flex;flex-direction:row;align-items:center;gap:6px;width:auto;font-size:12px}
 .bob-theme .support-card>summary{cursor:pointer;padding:5px;list-style:none}
 .bob-theme .support-card>summary::-webkit-details-marker{display:none}
 .bob-theme .support-card>summary h3{margin:8px 0;font-size:17px}
