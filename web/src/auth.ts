@@ -25,11 +25,12 @@ export async function refreshIdentity(){
   el('account-nav-label').textContent=pending?'계정 복원':user?'내 정보':'로그인';el('admin-link').hidden=!admin;
   el('auth-box').hidden=!recovery&&(!!pending||!!user);el('member-box').hidden=!user||recovery;
   el('account-recovery-box').hidden=!pending||recovery;el('account-restore-form').hidden=!pending?.canRestore;
-  el('account-recovery-contact').hidden=!pending?.forced;
+  el('account-recovery-contact').hidden=!pending?.forced;el('account-recovery-restore-note').hidden=!pending?.forced;
   if(pending){
     message('account-recovery-email',who?.email??'');
     message('account-recovery-title',pending.forced?'운영자가 탈퇴 처리한 계정입니다':pending.canRestore?'다시 함께할까요?':'복원 기간이 지났어요');
-    message('account-recovery-detail',pending.forced?('탈퇴 사유: '+(pending.reason||'운영자에게 문의해 주세요.')+(pending.canAdminRestore?' 복원은 운영자만 처리할 수 있습니다.':' 복원 가능한 7일이 지났습니다.')):pending.canRestore?'복원하면 취향·찜·추천 및 방문 기록·작성한 글을 다시 이용할 수 있어요.':'개인정보를 영구 삭제한 뒤에는 계정을 복원할 수 없습니다.');
+    message('account-recovery-detail',pending.forced?('탈퇴 사유: '+(pending.reason||'운영자에게 문의해 주세요.')):pending.canRestore?'복원하면 취향·찜·추천 및 방문 기록·작성한 글을 다시 이용할 수 있어요.':'개인정보를 영구 삭제한 뒤에는 계정을 복원할 수 없습니다.');
+    message('account-recovery-restore-note',pending.forced?(pending.canAdminRestore?'복원은 운영자만 처리할 수 있습니다.':'복원 가능한 7일이 지났습니다.'):'');
     message('account-recovery-deadline',pending.forced?date(pending.restoreUntil)+' 이후 영구 삭제 예정입니다.':pending.canRestore?date(pending.restoreUntil)+'까지 복원할 수 있어요.':'복원 가능한 7일이 지나 영구 삭제를 처리하고 있습니다.');
   }
   el('account-heading').textContent=pending?'탈퇴한 계정입니다':user?'내 정보':'반가워요, 밥친구!';

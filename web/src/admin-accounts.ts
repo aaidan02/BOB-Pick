@@ -4,7 +4,7 @@ import {el,friendly,input,message,node} from './ui';
 
 type AdminAccount={user_id:string;email:string;nickname:string;is_self:boolean;can_remove:boolean;is_master:boolean};
 type SearchAccount={user_id:string;email:string;nickname:string;email_confirmed:boolean;is_admin:boolean;can_grant:boolean};
-let listVersion=0,searchVersion=0,busy=false,identity:string|null=null,rechecking:Promise<void>|null=null;
+let listVersion=0,searchVersion=0,busy=false,identity:string|null=null,knownAdmin=false,rechecking:Promise<void>|null=null;
 
 function setBusy(value:boolean){
   busy=value;el<HTMLButtonElement>('admin-account-search-submit').disabled=value;
@@ -101,8 +101,9 @@ export function initAdminAccounts(){
   el<HTMLFormElement>('admin-account-search-form').onsubmit=event=>{event.preventDefault();if(!busy)void searchAccounts();};
   el('admin-account-search').oninput=()=>{searchVersion++;el('admin-account-results').replaceChildren();message('admin-account-search-status','');};
   window.addEventListener('identity-changed',()=>{
+    const next=user?.id??null;if(identity===next&&knownAdmin===admin)return;
     clearAccounts();message('admin-account-list-status','');message('admin-account-search-status','');message('admin-account-status','');
     if(identity!==user?.id||!admin)el<HTMLInputElement>('admin-account-search').value='';
-    identity=user?.id??null;
+    identity=next;knownAdmin=admin;
   });
 }
