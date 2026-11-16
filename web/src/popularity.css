@@ -35,3 +35,4 @@
   .bob-theme .popular-place{min-height:36px}
 }
 @media(max-width:820px){.bob-theme .popular-sidebar{bottom:calc(94px + env(safe-area-inset-bottom));left:16px}.bob-theme .popular-panel{max-width:calc(100vw - 32px);max-height:calc(100dvh - 240px)}}
+.bob-theme .popular-place.popular-count-hidden{grid-template-columns:14px minmax(0,1fr)}

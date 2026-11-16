@@ -11,7 +11,7 @@ before(async()=>{
   db=new PGlite();
   await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;
     create table auth.users(id uuid primary key,email varchar(255),raw_user_meta_data jsonb default '{}',email_confirmed_at timestamptz,deleted_at timestamptz,banned_until timestamptz,is_anonymous boolean default false);
-    create table auth.sessions(id uuid primary key,user_id uuid references auth.users(id) on delete cascade,not_after timestamptz);
+    create table auth.sessions(id uuid primary key,user_id uuid references auth.users(id) on delete cascade,not_after timestamptz,created_at timestamptz not null default clock_timestamp());
     create function auth.jwt() returns jsonb language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb$$;
     create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
     grant usage on schema public,auth to anon,authenticated;grant execute on function auth.uid() to anon,authenticated;`);
@@ -148,8 +148,9 @@ test('site popularity counts actual inserted events and distinct visiting or fav
     for(const history of await asUser(actor,'authenticated',()=>query('select id from recommendation_history')))await asUser(actor,'authenticated',()=>query('select set_history_visit($1,true)',[history.id]));
     for(const menu of menus)await asUser(actor,'authenticated',()=>query('insert into favorites(user_id,menu_id) values($1,$2)',[actor,menu.id]));
   }
-  const popularity=async()=>(await asUser(null,'anon',()=>query('select site_popularity() value')))[0].value;
+  const popularity=async()=>(await asUser(ADMIN,'authenticated',()=>query('select site_popularity() value')))[0].value;
   let data=await popularity();for(const [kind,n]of [['searches',3],['visits',2],['favorites',2]]as const)assert.equal(data[kind].find((row:any)=>row.id===r).metric_count,n);
+  for(const viewer of [null,voters[0]]){const publicData=(await asUser(viewer,viewer?'authenticated':'anon',()=>query('select site_popularity() value')))[0].value;assert.equal(publicData.canViewSearchCounts,false);assert.deepEqual(publicData.searches.map((x:any)=>x.id),data.searches.map((x:any)=>x.id));assert(publicData.searches.every((x:any)=>!Object.hasOwn(x,'metric_count')));assert.equal(publicData.visits.find((x:any)=>x.id===r).metric_count,2);}
   assert(Number.isFinite(new Date(data.startedAt).getTime()));for(const voter of voters)assert(!JSON.stringify(data).includes(voter));assert(!JSON.stringify(data).includes('@example.test'));
   await assert.rejects(()=>asUser(voters[0],'authenticated',()=>query('select * from private.restaurant_search_counts')));
   await asUser(voters[0],'authenticated',()=>query('delete from recommendation_history'));

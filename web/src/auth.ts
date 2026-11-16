@@ -3,7 +3,7 @@ import {client,db,rpc} from './supabase';
 import {action,el,input,message,date} from './ui';
 export let user:User|null=null;
 export let admin=false;
-export let accountRecovery:{userId:string;canRestore:boolean;restoreUntil:string}|null=null;
+export let accountRecovery:{userId:string;canRestore:boolean;restoreUntil:string;forced?:boolean;reason?:string;canAdminRestore?:boolean}|null=null;
 let mode='login',recovery=false,identityVersion=0;
 export function requireUser(){if(!user){location.hash='account';throw Error('로그인 후 이용해 주세요.');}return user;}
 export async function refreshIdentity(){
@@ -11,10 +11,10 @@ export async function refreshIdentity(){
   const {data:{session},error}=await client().auth.getSession();if(error)throw error;
   let who=session?.user??null;let isAdmin=false,nickname='',pending:typeof accountRecovery=null;
   if(who){
-    const state=await rpc<{pending:boolean;missing:boolean;active:boolean;canRestore:boolean;restoreUntil:string}>('account_recovery_status');
+    const state=await rpc<{pending:boolean;missing:boolean;active:boolean;canRestore:boolean;restoreUntil:string;forced?:boolean;reason?:string;canAdminRestore?:boolean}>('account_recovery_status');
     if(mine!==identityVersion)return;
     if(state.missing||(!state.pending&&!state.active)){await client().auth.signOut({scope:'local'});who=null;}
-    else if(state.pending)pending={userId:who.id,canRestore:state.canRestore,restoreUntil:state.restoreUntil};
+    else if(state.pending)pending={userId:who.id,canRestore:state.canRestore,restoreUntil:state.restoreUntil,forced:state.forced,reason:state.reason,canAdminRestore:state.canAdminRestore};
   }
   if(who&&!pending){
     try{isAdmin=await rpc<boolean>('is_admin');}catch{isAdmin=false;}
@@ -25,7 +25,13 @@ export async function refreshIdentity(){
   el('account-nav-label').textContent=pending?'계정 복원':user?'내 정보':'로그인';el('admin-link').hidden=!admin;
   el('auth-box').hidden=!recovery&&(!!pending||!!user);el('member-box').hidden=!user||recovery;
   el('account-recovery-box').hidden=!pending||recovery;el('account-restore-form').hidden=!pending?.canRestore;
-  if(pending){message('account-recovery-email',who?.email??'');message('account-recovery-title',pending.canRestore?'다시 함께할까요?':'복원 기간이 지났어요');message('account-recovery-detail',pending.canRestore?'복원하면 취향·찜·추천 및 방문 기록·작성한 글을 다시 이용할 수 있어요.':'개인정보를 영구 삭제한 뒤에는 계정을 복원할 수 없습니다.');message('account-recovery-deadline',pending.canRestore?date(pending.restoreUntil)+'까지 복원할 수 있어요.':'복원 가능한 7일이 지나 영구 삭제를 처리하고 있습니다.');}
+  el('account-recovery-contact').hidden=!pending?.forced;
+  if(pending){
+    message('account-recovery-email',who?.email??'');
+    message('account-recovery-title',pending.forced?'운영자가 탈퇴 처리한 계정입니다':pending.canRestore?'다시 함께할까요?':'복원 기간이 지났어요');
+    message('account-recovery-detail',pending.forced?('탈퇴 사유: '+(pending.reason||'운영자에게 문의해 주세요.')+(pending.canAdminRestore?' 복원은 운영자만 처리할 수 있습니다.':' 복원 가능한 7일이 지났습니다.')):pending.canRestore?'복원하면 취향·찜·추천 및 방문 기록·작성한 글을 다시 이용할 수 있어요.':'개인정보를 영구 삭제한 뒤에는 계정을 복원할 수 없습니다.');
+    message('account-recovery-deadline',pending.forced?date(pending.restoreUntil)+' 이후 영구 삭제 예정입니다.':pending.canRestore?date(pending.restoreUntil)+'까지 복원할 수 있어요.':'복원 가능한 7일이 지나 영구 삭제를 처리하고 있습니다.');
+  }
   el('account-heading').textContent=pending?'탈퇴한 계정입니다':user?'내 정보':'반가워요, 밥친구!';
   if(user){
     el<HTMLInputElement>('profile-nickname').value=nickname;

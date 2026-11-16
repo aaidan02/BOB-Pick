@@ -1,3 +1,4 @@
+import {adminUsersMarkup,initAdminUsers} from './admin-users';
 import {restoreMarkup,initRestore,loadRestore} from './admin-restore';
 import {accountMarkup,initAccount,loadAccountOverview} from './account';
 import {supportMarkup,initSupport,loadSupport,loadAdminSupport} from './support';
@@ -27,7 +28,7 @@ export async function initPortal(){
       </form><button type="button" data-auth-mode="reset" class="text-button">비밀번호를 잊으셨나요?</button><p id="auth-status" class="form-status" role="status"></p>
     </div>
     <div id="member-box" hidden>${accountMarkup()}</div>
-    <div id="account-recovery-box" class="surface account-surface" hidden><p class="section-eyebrow">계정 복원</p><h2 id="account-recovery-title">다시 함께할까요?</h2><p id="account-recovery-email" class="helper"></p><p id="account-recovery-deadline"></p><p id="account-recovery-detail" class="helper">복원하면 취향·찜·추천 및 방문 기록·작성한 글을 다시 이용할 수 있어요.</p><form id="account-restore-form" class="portal-form"><label>현재 비밀번호<input id="account-restore-password" type="password" autocomplete="current-password" maxlength="128" required></label><button id="account-restore">탈퇴 취소하고 계정 복원</button><p id="account-restore-status" class="form-status" role="status"></p></form><button id="account-recovery-logout" type="button" class="text-button">로그아웃</button></div>
+    <div id="account-recovery-box" class="surface account-surface" hidden><p class="section-eyebrow">계정 복원</p><h2 id="account-recovery-title">다시 함께할까요?</h2><p id="account-recovery-email" class="helper"></p><p id="account-recovery-deadline"></p><p id="account-recovery-detail" class="helper">복원하면 취향·찜·추천 및 방문 기록·작성한 글을 다시 이용할 수 있어요.</p><p id="account-recovery-contact" class="helper" hidden>복원 문의: <a href="mailto:aaidantest@gmail.com">aaidantest@gmail.com</a></p><form id="account-restore-form" class="portal-form"><label>현재 비밀번호<input id="account-restore-password" type="password" autocomplete="current-password" maxlength="128" required></label><button id="account-restore">탈퇴 취소하고 계정 복원</button><p id="account-restore-status" class="form-status" role="status"></p></form><button id="account-recovery-logout" type="button" class="text-button">로그아웃</button></div>
   </section>
   <section id="support-panel" class="service-panel" hidden aria-labelledby="support-heading">${supportMarkup()}</section>
   <section id="favorites-panel" class="service-panel" hidden aria-labelledby="favorites-heading">
@@ -87,7 +88,7 @@ export async function initPortal(){
           <p id="admin-account-search-status" class="helper" role="status"></p><div id="admin-account-results"></div>
         </div><p id="admin-account-status" class="form-status" role="status"></p>
       </section>
-      <div class="admin-records"><h2>승인 및 처리 내역</h2><div class="moderation-tabs account-tabs" role="tablist" aria-label="관리 내역"><button id="admin-tab-inquiries" type="button" role="tab" aria-selected="true" aria-controls="admin-records-inquiries">문의 내역</button><button id="admin-tab-community" type="button" role="tab" aria-selected="false" aria-controls="admin-records-community">커뮤니티 내역</button></div>
+      ${adminUsersMarkup()}<div class="admin-records"><h2>승인 및 처리 내역</h2><div class="moderation-tabs account-tabs" role="tablist" aria-label="관리 내역"><button id="admin-tab-inquiries" type="button" role="tab" aria-selected="true" aria-controls="admin-records-inquiries">문의 내역</button><button id="admin-tab-community" type="button" role="tab" aria-selected="false" aria-controls="admin-records-community">커뮤니티 내역</button></div>
       <div class="admin-records-grid"><section id="admin-records-inquiries" class="admin-record-column" role="region" aria-labelledby="admin-inquiries-heading">
       <div class="admin-record-heading"><h3 id="admin-inquiries-heading">문의 내역</h3><button id="admin-inquiries-reload" type="button" class="secondary">새로고침</button></div><div id="admin-inquiries-scroll" class="admin-record-scroll" tabindex="0" role="region" aria-label="문의 내역 목록">
       <section class="surface"><div class="section-head"><h2>승인 대기 <span id="admin-pending-count" class="status-badge">0</span></h2></div><div id="admin-pending"></div></section>
@@ -99,7 +100,7 @@ export async function initPortal(){
   </section>${restoreMarkup()}`;
   el('account-art').prepend(document.querySelector('.hero-art')!.cloneNode(true));
   initAccount();initSupport();
-  initCommunity();initFavorites();initRequests();initAdminAccounts();initAdminRecords();initRestore();
+  initCommunity();initFavorites();initRequests();initAdminAccounts();initAdminUsers();initAdminRecords();initRestore();
   function route(){
     let page=location.hash.slice(1);
     if(isLegalPage(page)){showLegalPage(page);return;}

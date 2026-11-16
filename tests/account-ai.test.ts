@@ -12,7 +12,7 @@ const LEGACY='00000000-0000-4000-8000-000000000007';
 before(async()=>{
   db=new PGlite();await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;
     create table auth.users(id uuid primary key,email varchar(255),raw_user_meta_data jsonb default '{}',email_confirmed_at timestamptz,deleted_at timestamptz,banned_until timestamptz,is_anonymous boolean default false);
-    create table auth.sessions(id uuid primary key,user_id uuid references auth.users(id) on delete cascade,not_after timestamptz);
+    create table auth.sessions(id uuid primary key,user_id uuid references auth.users(id) on delete cascade,not_after timestamptz,created_at timestamptz not null default clock_timestamp());
     create function auth.jwt() returns jsonb language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb$$;
     create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
     grant usage on schema public,auth to anon,authenticated,service_role;grant execute on function auth.uid() to anon,authenticated;`);
@@ -310,4 +310,52 @@ test('expired withdrawals cannot be restored or extended; scheduled erasure remo
   const kept=(await db.query<any>('select user_id,payload,message,status from requests where id=$1',[request])).rows[0];assert.equal(kept.user_id,null);assert.deepEqual(kept.payload,{});assert.equal(kept.message,'');assert.equal(kept.status,'rejected');
   assert.equal((await rpc(id)('account_recovery_status')).missing,true);assert.equal(await rpc(id)('is_active_member'),false);
   assert.equal((await db.query<any>('select count(*) n from auth.users where id=$1',[MASTER])).rows[0].n,1);
+});
+
+const moderate=(target:string,action:string,revision:number,reason='반복적인 스팸 등록',actorId=ADMIN)=>rpc(actorId)('admin_moderate_user',{p_user_id:target,p_action:action,p_reason:reason,p_expected_revision:revision,p_expected_actor:actorId});
+const userState=async(id:string)=>(await db.query<any>('select * from private.account_lifecycle where user_id=$1',[id])).rows[0];
+async function moderationMember(label:string){const id=crypto.randomUUID();await db.query('insert into auth.users(id,email,email_confirmed_at) values($1,$2,now())',[id,label+'@example.test']);return id;}
+test('forced withdrawal rejects members, forged metadata, stale actors and protected administrator targets',async()=>{
+  const id=await moderationMember('forced-permissions');
+  for(const viewer of [null,A]){
+    const call=rpc(viewer,viewer?'authenticated':'anon');await assert.rejects(()=>call('admin_search_users',{p_query:'example',p_state:'all',p_offset:0}));
+    await assert.rejects(()=>call('admin_moderate_user',{p_user_id:id,p_action:'force',p_reason:'사유',p_expected_revision:0,p_expected_actor:viewer}));
+  }
+  for(const target of [ADMIN,MASTER])await assert.rejects(()=>moderate(target,'force',0),/본인|마스터|관리자/);
+  await assert.rejects(()=>rpc(ADMIN)('admin_moderate_user',{p_user_id:id,p_action:'force',p_reason:'사유',p_expected_revision:0,p_expected_actor:B}),/계정이 변경/);
+  await assert.rejects(()=>moderate(id,'force',0,' '),/사유/);assert.equal(await userState(id),undefined);
+});
+test('forced withdrawal hides data, blocks self restoration and administrator grants, and requires a fresh session after cancellation',async()=>{
+  const id=await moderationMember('forced-lifecycle'),old=crypto.randomUUID(),fresh=crypto.randomUUID();await db.query('insert into auth.sessions(id,user_id) values($1,$2)',[old,id]);
+  const own=rpc(id,'authenticated',old),post=await own('save_post',{p_id:null,p_title:'강제 탈퇴 시 숨길 글',p_body:'내용',p_photos:[],p_expected_revision:null,p_expected_actor:id});
+  await moderate(id,'force',0,'테스트 전용 비공개 사유');let state=await userState(id);assert.equal(state.purge_at.getTime()-state.withdrawn_at.getTime(),7*86400000);assert.equal(state.withdrawal_kind,'admin');
+  const status=await own('account_recovery_status');assert.equal(status.forced,true);assert.equal(status.canAdminRestore,true);assert.equal(status.canRestore,false);assert.equal(status.reason,'테스트 전용 비공개 사유');assert.equal(await own('is_active_member'),false);
+  assert.equal((await actor(null,'anon',async tx=>(await tx.query('select * from search_posts($1,0,false)',['강제 탈퇴 시 숨길 글'])).rows)).length,0);
+  await assert.rejects(()=>own('save_post',{p_id:null,p_title:'우회',p_body:'우회',p_photos:[],p_expected_revision:null,p_expected_actor:id}));
+  await assert.rejects(()=>rpc(null,'service_role')('restore_withdrawn_account',{p_user_id:id,p_session_id:old}),/관리자/);
+  await assert.rejects(()=>rpc(ADMIN)('admin_set_membership',{p_user_id:id,p_enabled:true}),/이용 가능한/);
+  const found=await rpc(ADMIN)('admin_search_users',{p_query:'forced-lifecycle',p_state:'forced',p_offset:0});assert.equal(found[0].user_id,id);assert.equal(found[0].can_restore,true);
+  const grant=await actor(ADMIN,'authenticated',async tx=>(await tx.query('select * from admin_search_accounts($1)',['forced-lifecycle'])).rows);assert.equal(grant[0].can_grant,false);
+  await assert.rejects(()=>moderate(id,'restore',0),/상태가 변경/);await moderate(id,'restore',state.revision);assert.equal((await userState(id)).admin_reason,'');assert.equal(await own('is_active_member'),false);
+  await db.query('insert into auth.sessions(id,user_id) values($1,$2)',[fresh,id]);assert.equal(await rpc(id,'authenticated',fresh)('is_active_member'),true);
+  assert.equal((await actor(null,'anon',async tx=>(await tx.query('select id from posts where id=$1',[post])).rows)).length,1);
+});
+test('forced withdrawal is audited atomically, preserves voluntary erasure deadlines and permanently erases private reasons',async()=>{
+  const id=await moderationMember('forced-erase');await rpc(null,'service_role')('request_account_withdrawal',{p_user_id:id});const original=await userState(id);
+  await db.exec("create function private.test_forced_audit_failure() returns trigger language plpgsql as $$begin if new.entity='account_moderation' then raise exception 'test audit failure';end if;return new;end$$;create trigger test_forced_audit_failure before insert on change_logs for each row execute function private.test_forced_audit_failure()");
+  try{await assert.rejects(()=>moderate(id,'force',original.revision),/test audit failure/);assert.equal((await userState(id)).withdrawal_kind,'self');}finally{await db.exec('drop trigger test_forced_audit_failure on change_logs;drop function private.test_forced_audit_failure()');}
+  await moderate(id,'force',original.revision,'영구 파기할 비공개 사유');let state=await userState(id);assert.equal(state.purge_at.getTime(),original.purge_at.getTime());
+  const again=await moderate(id,'force',state.revision);assert.equal(again.changed,false);assert.equal((await userState(id)).purge_at.getTime(),original.purge_at.getTime());
+  const logs=(await db.query<any>('select * from change_logs where entity_id=$1',[id])).rows;assert(!JSON.stringify(logs).includes('영구 파기할 비공개 사유'));
+  await db.query("update private.account_lifecycle set withdrawn_at=now()-interval '8 days',purge_at=now()-interval '1 day' where user_id=$1",[id]);state=await userState(id);await assert.rejects(()=>moderate(id,'restore',state.revision),/영구 삭제/);
+  await db.exec('select private.purge_expired_accounts()');assert.equal(await userState(id),undefined);assert.equal((await db.query<any>('select count(*) n from change_logs where entity_id=$1',[id])).rows[0].n,0);
+});
+test('withdrawn and revoked administrators cannot read member management or search totals',async()=>{
+  const id=await moderationMember('forced-admin-access');await rpc(MASTER)('admin_set_membership',{p_user_id:id,p_enabled:true});
+  assert.equal((await rpc(id)('site_popularity')).canViewSearchCounts,true);
+  await rpc(null,'service_role')('request_account_withdrawal',{p_user_id:id});
+  for(const fn of ['admin_list_accounts','admin_search_users','admin_search_accounts'])await assert.rejects(()=>rpc(id)(fn,fn==='admin_list_accounts'?{}:fn==='admin_search_accounts'?{p_query:'example'}:{p_query:'example',p_state:'all',p_offset:0}));
+  await assert.rejects(()=>rpc(id)('admin_set_membership',{p_user_id:A,p_enabled:true}));
+  const data=await rpc(id)('site_popularity');assert.equal(data.canViewSearchCounts,false);assert(data.searches.every((r:any)=>!Object.hasOwn(r,'metric_count')));
+  await rpc(MASTER)('admin_set_membership',{p_user_id:id,p_enabled:false});
 });

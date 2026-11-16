@@ -1,8 +1,9 @@
+import {admin,user} from './auth';
 import {rpc} from './supabase';
 import {el,node} from './ui';
 import {directionsUrl,type MapPlace} from './naver';
-type PopularPlace=MapPlace&{id:string;address:string;metric_count:number};
-type Popularity={startedAt:string;searches:PopularPlace[];visits:PopularPlace[];favorites:PopularPlace[]};
+type PopularPlace=MapPlace&{id:string;address:string;metric_count?:number};
+type Popularity={canViewSearchCounts:boolean;startedAt:string;searches:PopularPlace[];visits:PopularPlace[];favorites:PopularPlace[]};
 let version=0,controller:AbortController|null=null,timer:ReturnType<typeof setTimeout>,loaded=false;
 async function loadPopularity(){
   controller?.abort();controller=new AbortController();const mine=++version;el<HTMLButtonElement>('popularity-reload').disabled=true;
@@ -12,10 +13,10 @@ async function loadPopularity(){
       if(!Array.isArray(data[kind]))throw Error('Invalid statistics');
       const list=el('popular-'+kind);list.replaceChildren();
       data[kind].forEach((row,index)=>{
-        const count=Number(row.metric_count);if(!Number.isFinite(count)||count<=0||typeof row.name!=='string')return;
+        const showCount=kind!=='searches'||(admin&&data.canViewSearchCounts===true),count=Number(row.metric_count);if(typeof row.name!=='string'||(showCount&&(!Number.isFinite(count)||count<=0)))return;
         const item=node('li'),link=node('a','','popular-place'),rank=node('span',String(index+1),'popular-rank'),info=node('span','','popular-place-info');
         info.append(node('strong',row.name),node('small',row.address||'둔산동'));link.href=directionsUrl(row);link.target='_blank';link.rel='noopener noreferrer';link.title=row.name+' · '+(row.address||'둔산동');link.setAttribute('aria-label',row.name+' 네이버 길찾기 (새 탭)');
-        link.append(rank,info,node('span',count.toLocaleString('ko-KR')+(kind==='searches'?'회':'명'),'popular-total'));item.dataset.restaurantId=row.id;item.append(link);list.append(item);
+        link.append(rank,info);if(showCount)link.append(node('span',count.toLocaleString('ko-KR')+(kind==='searches'?'회':'명'),'popular-total'));else link.classList.add('popular-count-hidden');item.dataset.restaurantId=row.id;item.append(link);list.append(item);
       });
       if(!list.children.length){const text=kind==='searches'?'아직 집계된 검색 결과가 없어요.':kind==='visits'?'아직 방문 표시가 없어요.':'아직 찜한 메뉴가 없어요.';list.append(node('li',text,'popular-empty'));}
     }
@@ -34,6 +35,7 @@ export function initPopularity(){
   matchMedia('(min-width:1800px)').addEventListener('change',close);window.addEventListener('hashchange',close);
   el('popularity-reload').onclick=()=>void loadPopularity();
   const changed=()=>{clearTimeout(timer);timer=setTimeout(()=>void loadPopularity(),200);};
-  window.addEventListener('site-activity-changed',changed);window.addEventListener('identity-changed',changed);window.addEventListener('focus',changed);
+  let identity='';
+  window.addEventListener('site-activity-changed',changed);window.addEventListener('identity-changed',()=>{const next=(user?.id??'')+':'+admin;if(next===identity)return;identity=next;controller?.abort();version++;el('popular-searches').querySelectorAll('.popular-total').forEach(e=>e.remove());changed();});window.addEventListener('focus',changed);
   void loadPopularity();
 }
