@@ -1,3 +1,4 @@
+import {authArtifactSchema} from './auth-schema.ts';
 import {test,before,after} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync,readdirSync} from 'node:fs';
@@ -16,6 +17,7 @@ before(async()=>{
     create function auth.jwt() returns jsonb language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb$$;
     create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
     grant usage on schema public,auth to anon,authenticated,service_role;grant execute on function auth.uid() to anon,authenticated;`);
+  await db.exec(authArtifactSchema);
   for(const file of readdirSync('supabase/migrations').sort()){
     if(file.endsWith('_post_signup_preferences.sql')){
       await db.query('insert into auth.users(id,email) values($1,$2)',[LEGACY,'existing@example.test']);
@@ -358,4 +360,36 @@ test('withdrawn and revoked administrators cannot read member management or sear
   await assert.rejects(()=>rpc(id)('admin_set_membership',{p_user_id:A,p_enabled:true}));
   const data=await rpc(id)('site_popularity');assert.equal(data.canViewSearchCounts,false);assert(data.searches.every((r:any)=>!Object.hasOwn(r,'metric_count')));
   await rpc(MASTER)('admin_set_membership',{p_user_id:id,p_enabled:false});
+});
+
+async function seedAuthArtifacts(id:string,email:string){
+  const session=crypto.randomUUID();await db.query('insert into auth.sessions(id,user_id) values($1,$2)',[session,id]);
+  await db.query("update auth.users set encrypted_password='test-only-hash',confirmation_token='test-only-confirmation',email_confirmed_at=now() where id=$1",[id]);
+  await db.query("insert into auth.identities(user_id,identity_data) values($1,$2)",[id,{email}]);
+  await db.query('insert into auth.one_time_tokens(user_id) values($1)',[id]);
+  const factor=(await db.query<any>('insert into auth.mfa_factors(user_id) values($1) returning id',[id])).rows[0].id;await db.query('insert into auth.mfa_challenges(factor_id) values($1)',[factor]);
+  await db.query('insert into auth.refresh_tokens(user_id,session_id) values($1,$2),($1,null)',[id,session]);await db.query('insert into auth.flow_state(user_id) values($1)',[id]);
+  return {session,factor};
+}
+async function countAuthArtifacts(id:string){
+  const pairs=[['auth.users','id'],['auth.identities','user_id'],['auth.sessions','user_id'],['auth.one_time_tokens','user_id'],['auth.mfa_factors','user_id'],['auth.refresh_tokens','user_id'],['auth.flow_state','user_id']];
+  return Object.fromEntries(await Promise.all(pairs.map(async([table,key])=>[table,(await db.query<any>(`select count(*) n from ${table} where ${key}=$1`,[id])).rows[0].n])));
+}
+test('seven-day erasure removes email, password verification, identities, OTP, sessions, legacy refresh tokens and PKCE state together',async()=>{
+  const id=await moderationMember('erase-auth'),other=await moderationMember('keep-auth'),email='erase-auth@example.test';
+  const artifacts=await seedAuthArtifacts(id,email),control=await seedAuthArtifacts(other,'keep-auth@example.test');
+  const initial=await countAuthArtifacts(id);assert.equal(initial['auth.refresh_tokens'],2);
+  await rpc(null,'service_role')('request_account_withdrawal',{p_user_id:id});assert.deepEqual(await countAuthArtifacts(id),initial);assert.equal(await rpc(id,'authenticated',artifacts.session)('is_active_member'),false);
+  const keep=await countAuthArtifacts(other);
+  await db.query("update private.account_lifecycle set withdrawn_at=now()-interval '8 days',purge_at=now()-interval '1 day' where user_id=$1",[id]);await db.exec('select private.purge_expired_accounts()');
+  for(const [table,total] of Object.entries(await countAuthArtifacts(id)))assert.equal(total,0,table);
+  assert.equal((await db.query<any>('select count(*) n from auth.mfa_challenges where factor_id=$1',[artifacts.factor])).rows[0].n,0);assert.equal((await db.query<any>('select count(*) n from auth.users where email=$1',[email])).rows[0].n,0);
+  assert.deepEqual(await countAuthArtifacts(other),keep);assert.equal(await rpc(other,'authenticated',control.session)('is_active_member'),true);assert.equal(await rpc(id,'authenticated',artifacts.session)('is_active_member'),false);
+});
+test('failed account erasure rolls back email and Auth cleanup, while the master remains protected',async()=>{
+  const id=await moderationMember('erase-auth-rollback');await seedAuthArtifacts(id,'erase-auth-rollback@example.test');
+  await rpc(id)('save_post',{p_id:null,p_title:'파기 실패 원자성',p_body:'보관할 내용',p_photos:[],p_expected_revision:null,p_expected_actor:id});const before=await countAuthArtifacts(id);
+  await db.exec("create function private.test_auth_erasure_failure() returns trigger language plpgsql as $$begin raise exception 'test erasure failure';end$$;create trigger test_auth_erasure_failure before delete on public.posts for each row execute function private.test_auth_erasure_failure()");
+  try{await assert.rejects(()=>db.query('delete from auth.users where id=$1',[id]),/test erasure failure/);assert.deepEqual(await countAuthArtifacts(id),before);}finally{await db.exec('drop trigger test_auth_erasure_failure on public.posts;drop function private.test_auth_erasure_failure()');}
+  await seedAuthArtifacts(MASTER,'master-account@example.test');const protectedBefore=await countAuthArtifacts(MASTER);await assert.rejects(()=>db.query('delete from auth.users where id=$1',[MASTER]),/마스터/);assert.deepEqual(await countAuthArtifacts(MASTER),protectedBefore);
 });

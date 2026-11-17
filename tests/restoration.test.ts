@@ -1,3 +1,4 @@
+import {authArtifactSchema} from './auth-schema.ts';
 import {test,before,after} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync,readdirSync} from 'node:fs';
@@ -12,6 +13,7 @@ before(async()=>{
   create function auth.jwt() returns jsonb language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb$$;
   create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
   grant usage on schema public,auth to anon,authenticated;grant execute on function auth.uid() to anon,authenticated;`);
+  await db.exec(authArtifactSchema);
   for(const f of readdirSync('supabase/migrations').sort())await db.exec(readFileSync('supabase/migrations/'+f,'utf8'));
   for(const id of [A,B,ADMIN,MASTER])await db.query('insert into auth.users(id,email,email_confirmed_at) values($1,$2,now())',[id,id+'@example.test']);
   await db.query('insert into private.admin_members(user_id,is_master) values($1,false),($2,true)',[ADMIN,MASTER]);

@@ -1,3 +1,4 @@
+import {authArtifactSchema} from './auth-schema.ts';
 import {communityMedia} from '../supabase/functions/_shared/community-media.ts';
 import {deleteOwnAccount,AccountDeletionError} from '../supabase/functions/_shared/account-deletion.ts';
 import {recommendWithAi,AiRequestError} from '../supabase/functions/_shared/ai-service.ts';
@@ -11,7 +12,8 @@ create table auth.sessions(id uuid primary key,user_id uuid references auth.user
     create function auth.jwt() returns jsonb language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb$$;
     create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
 grant usage on schema public,auth to anon,authenticated;grant execute on function auth.uid() to anon,authenticated;`);
-for(const file of readdirSync('supabase/migrations').sort())await db.exec(readFileSync('supabase/migrations/'+file,'utf8'));
+await db.exec(authArtifactSchema);
+  for(const file of readdirSync('supabase/migrations').sort())await db.exec(readFileSync('supabase/migrations/'+file,'utf8'));
 await db.exec(readFileSync('supabase/seed.sql','utf8'));
 const users=new Map<string,any>(),tokens=new Map<string,any>(),passwords=new Map<string,string>();
 for(const [suffix,email] of [['1','a@example.test'],['2','b@example.test'],['3','admin@example.test'],['4','pending@example.test'],['5','master@example.test']]){

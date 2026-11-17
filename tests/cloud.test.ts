@@ -1,3 +1,4 @@
+import {authArtifactSchema} from './auth-schema.ts';
 import {test,before,after} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync,readdirSync} from 'node:fs';
@@ -15,6 +16,7 @@ before(async()=>{
     create function auth.jwt() returns jsonb language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb$$;
     create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
     grant usage on schema public,auth to anon,authenticated;grant execute on function auth.uid() to anon,authenticated;`);
+  await db.exec(authArtifactSchema);
   for(const file of readdirSync('supabase/migrations').sort())await db.exec(readFileSync('supabase/migrations/'+file,'utf8'));
   try{await db.exec(readFileSync('supabase/seed.sql','utf8'));}catch(error){throw Error('Catalog import failed: '+(error as Error).message);}
   await db.exec(`insert into auth.users(id,email,email_confirmed_at) values('${A}','a@example.test',now()),('${B}','b@example.test',now()),('${ADMIN}','admin@example.test',now());insert into private.admin_members values('${ADMIN}');`);
