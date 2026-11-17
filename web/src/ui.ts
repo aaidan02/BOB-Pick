@@ -6,6 +6,7 @@ export function input(id:string){return el<HTMLInputElement>(id).value.trim();}
 export function message(id:string,value:string){el(id).textContent=value;}
 export function friendly(error:unknown){
   const text=error instanceof Error?error.message:String((error as {message?:string})?.message??error);
+  if(/captcha|turnstile/i.test(text))return '보안 확인에 실패했습니다. 다시 시도해 주세요.';
   if(/Invalid login credentials/i.test(text))return '이메일과 비밀번호를 확인해 주세요.';
   if(/Email not confirmed/i.test(text))return '메일의 가입 확인 링크를 먼저 눌러 주세요.';
   if(/already registered/i.test(text))return '이미 가입한 이메일입니다.';

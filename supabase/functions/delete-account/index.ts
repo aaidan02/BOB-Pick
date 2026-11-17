@@ -20,8 +20,10 @@ Deno.serve(async req=>{
     const service=createClient(url,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}});
     const result=await deleteOwnAccount(JSON.parse(text),user.id,{
       status:async()=>{const {data,error}=await client.rpc('account_deletion_status');if(error)throw error;return data;},
-      verifyPassword:async password=>{
-        const {data,error}=await verifier.auth.signInWithPassword({email:user.email!,password});if(error||!data.user||!data.session)return null;
+      verifyPassword:async(password,captchaToken)=>{
+        const {data,error}=await verifier.auth.signInWithPassword({email:user.email!,password,options:{captchaToken}});
+        if(error&&/captcha/i.test(error.message))throw new AccountDeletionError('보안 확인에 실패했습니다. 다시 시도해 주세요.',403);
+        if(error||!data.user||!data.session)return null;
         const token=data.session.access_token,claims=JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
         if(typeof claims.session_id!=='string')throw Error('본인 확인 세션을 확인하지 못했습니다.');
         return {userId:data.user.id,token,sessionId:claims.session_id,session:{access_token:token,refresh_token:data.session.refresh_token}};

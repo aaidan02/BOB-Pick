@@ -1,5 +1,6 @@
 import {user,requireUser,refreshIdentity} from './auth';
 import {client,rpc} from './supabase';
+import {withCaptcha} from './turnstile';
 import {el,node,action,message,friendly,price,date} from './ui';
 import {directionsUrl} from './naver';
 import {preferenceMarkup,renderPreferenceForm,readPreferenceForm} from './preference-form';
@@ -121,16 +122,24 @@ export function initAccount(){
     event.preventDefault();void action(el('password-save'),'password-status',async()=>{
       const who=requireUser(),current=(el('password-current') as HTMLInputElement).value,password=(el('password-new') as HTMLInputElement).value;
       if(password!==(el('password-confirm') as HTMLInputElement).value)throw Error('새 비밀번호가 일치하지 않습니다.');
-      const {data,error}=await client().auth.signInWithPassword({email:who.email!,password:current});
+      await withCaptcha(el('password-form'),async captchaToken=>{
+      if(user?.id!==who.id)throw Error('로그인 상태가 변경되었습니다. 다시 시도해 주세요.');
+      const {data,error}=await client().auth.signInWithPassword({email:who.email!,password:current,options:{captchaToken}});
+      if(error&&/captcha/i.test(error.message))throw Error('보안 확인에 실패했습니다. 다시 시도해 주세요.');
       if(error||data.user?.id!==who.id)throw Error('현재 비밀번호를 확인해 주세요.');
       const updated=await client().auth.updateUser({password});if(updated.error)throw updated.error;
       (el('password-form') as HTMLFormElement).reset();message('password-status','비밀번호를 변경했습니다.');
+      });
     });
   };
   (el('account-delete-form') as HTMLFormElement).onsubmit=event=>{
     event.preventDefault();if(!(el('account-delete-confirm') as HTMLInputElement).checked)return;
     void action(el('account-delete'),'account-delete-status',async()=>{
-      const who=requireUser(),{data,error}=await client().functions.invoke('delete-account',{body:{action:'withdraw',retentionDays:7,password:(el('account-delete-password') as HTMLInputElement).value,confirm:true,expectedUserId:who.id}});
+      const who=requireUser(),password=(el('account-delete-password') as HTMLInputElement).value;
+      const {data,error}=await withCaptcha(el('account-delete-form'),async captchaToken=>{
+        if(user?.id!==who.id)throw Error('로그인 상태가 변경되었습니다. 다시 시도해 주세요.');
+        return client().functions.invoke('delete-account',{body:{action:'withdraw',retentionDays:7,password,confirm:true,expectedUserId:who.id,captchaToken}});
+      });
       if(error){let text='탈퇴하지 못했습니다. 잠시 후 다시 시도해 주세요.';if(error.context instanceof Response)try{text=(await error.context.json()).error??text;}catch{}throw Error(text);}
       if(!data?.withdrawn)throw Error('탈퇴 결과를 확인하지 못했습니다.');
       await client().auth.signOut({scope:'local'});await refreshIdentity();(el('account-delete-form') as HTMLFormElement).reset();message('auth-status','탈퇴했습니다. 7일 안에 로그인하면 계정을 복원할 수 있어요.');location.hash='account';

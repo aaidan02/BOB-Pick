@@ -1,6 +1,7 @@
 import type {User} from '@supabase/supabase-js';
 import {client,db,rpc} from './supabase';
 import {action,el,input,message,date} from './ui';
+import {withCaptcha,cancelCaptcha} from './turnstile';
 export let user:User|null=null;
 export let admin=false;
 export let accountRecovery:{userId:string;canRestore:boolean;restoreUntil:string;forced?:boolean;reason?:string;canAdminRestore?:boolean}|null=null;
@@ -41,6 +42,7 @@ export async function refreshIdentity(){
   window.dispatchEvent(new Event('identity-changed'));
 }
 function setMode(next:string){
+  cancelCaptcha(el('auth-form'));
   mode=next;recovery=next==='password';
   el('auth-nickname-row').hidden=mode!=='signup';
   el('auth-password-confirm-row').hidden=!['signup','password'].includes(mode);
@@ -60,20 +62,24 @@ export async function initAuth(){
     event.preventDefault();void action(el('auth-submit'),'auth-status',async()=>{
       const email=input('auth-email'),password=el<HTMLInputElement>('auth-password').value,redirectTo=location.origin+'/#account';
       if(['signup','password'].includes(mode)&&password!==el<HTMLInputElement>('auth-password-confirm').value)throw Error('비밀번호가 일치하지 않습니다.');
-      if(mode==='login'){
-        const {error}=await client().auth.signInWithPassword({email,password});if(error)throw error;
-        message('auth-status','로그인했습니다.');await refreshIdentity();
-      }else if(mode==='signup'){
-        const nickname=input('auth-nickname');if(nickname.length<2||nickname.length>40)throw Error('닉네임은 2~40자로 입력해 주세요.');
-        const {data,error}=await client().auth.signUp({email,password,options:{data:{nickname},emailRedirectTo:redirectTo}});if(error)throw error;
-        message('auth-status',data.session?'회원가입했습니다.':'이메일로 보낸 가입 확인 링크를 눌러 주세요.');await refreshIdentity();
-      }else if(mode==='reset'){
-        const {error}=await client().auth.resetPasswordForEmail(email,{redirectTo:location.origin+'/?recovery=1#account'});if(error)throw error;
-        message('auth-status','가입한 이메일이면 비밀번호 재설정 메일이 발송됩니다.');
-      }else{
+      const requestedMode=mode,nickname=input('auth-nickname');
+      if(requestedMode==='signup'&&(nickname.length<2||nickname.length>40))throw Error('닉네임은 2~40자로 입력해 주세요.');
+      if(requestedMode==='password'){
         const {error}=await client().auth.updateUser({password});if(error)throw error;
         recovery=false;history.replaceState(null,'',location.pathname+'#account');setMode('login');await refreshIdentity();message(accountRecovery?'account-restore-status':'member-status',accountRecovery?'비밀번호를 변경했습니다. 새 비밀번호로 계정을 복원해 주세요.':'비밀번호를 변경했습니다.');
+      }else await withCaptcha(el('auth-form'),async captchaToken=>{
+      if(mode!==requestedMode)throw Error('다시 시도해 주세요.');
+      if(requestedMode==='login'){
+        const {error}=await client().auth.signInWithPassword({email,password,options:{captchaToken}});if(error)throw error;
+        message('auth-status','로그인했습니다.');await refreshIdentity();
+      }else if(requestedMode==='signup'){
+        const {data,error}=await client().auth.signUp({email,password,options:{data:{nickname},emailRedirectTo:redirectTo,captchaToken}});if(error)throw error;
+        message('auth-status',data.session?'회원가입했습니다.':'이메일로 보낸 가입 확인 링크를 눌러 주세요.');await refreshIdentity();
+      }else if(requestedMode==='reset'){
+        const {error}=await client().auth.resetPasswordForEmail(email,{redirectTo:location.origin+'/?recovery=1#account',captchaToken});if(error)throw error;
+        message('auth-status','가입한 이메일이면 비밀번호 재설정 메일이 발송됩니다.');
       }
+      });
       el<HTMLInputElement>('auth-password').value='';el<HTMLInputElement>('auth-password-confirm').value='';
     });
   };
@@ -93,7 +99,11 @@ export async function initAuth(){
   el<HTMLFormElement>('account-restore-form').onsubmit=event=>{
     event.preventDefault();void action(el('account-restore'),'account-restore-status',async()=>{
       const pending=accountRecovery;if(!pending?.canRestore)throw Error('복원 가능한 7일이 지났습니다.');
-      const {data,error}=await client().functions.invoke('delete-account',{body:{action:'restore',confirm:true,expectedUserId:pending.userId,password:el<HTMLInputElement>('account-restore-password').value}});
+      const password=el<HTMLInputElement>('account-restore-password').value;
+      const {data,error}=await withCaptcha(el('account-restore-form'),async captchaToken=>{
+        if(accountRecovery?.userId!==pending.userId)throw Error('로그인 상태가 변경되었습니다. 다시 시도해 주세요.');
+        return client().functions.invoke('delete-account',{body:{action:'restore',confirm:true,expectedUserId:pending.userId,password,captchaToken}});
+      });
       if(error){let text='복원하지 못했습니다. 잠시 후 다시 시도해 주세요.';if(error.context instanceof Response)try{text=(await error.context.json()).error??text;}catch{}throw Error(text);}
       if(!data?.restored||!data.session)throw Error('복원 결과를 확인하지 못했습니다.');
       const updated=await client().auth.setSession(data.session);if(updated.error)throw updated.error;

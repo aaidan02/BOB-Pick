@@ -2,6 +2,7 @@ import {test,expect} from '@playwright/test';
 import {legacyRecommendation} from '../supabase/functions/_shared/recommendation';
 import {naverMapSdkFixture} from './naver-sdk-fixture';
 import {hasMapCoordinates} from '../web/src/naver';
+import {installTurnstile,turnstileSdkFixture} from './turnstile-sdk-fixture';
 
 test('community photos can be attached and removed, hidden images stay private, and the dedicated restore page republishes them',async({page,browser})=>{
   await signupMember(page,'photo-post@example.test');await page.locator('.service-nav a[href="#community"]').click();await page.locator('#post-compose').click();await page.locator('#post-title').fill('사진 첨부 복원 테스트');await page.locator('#post-body').fill('맛있는 한 끼 사진');
@@ -100,9 +101,44 @@ test('popularity stays in the left gutter without adding page height and collaps
   await page.locator('.service-nav a[href="#community"]').click();await expect(toggle).toBeHidden();await page.locator('.brand').click();await expect(sidebar).toBeHidden();
 });
 test.beforeEach(async({page})=>{
+  await installTurnstile(page);
   await page.route('https://oapi.map.naver.com/**',route=>route.abort());
   // Existing feature flows start after onboarding. Guide tests use clean contexts.
   await page.addInitScript(()=>localStorage.setItem('bob-pick:help-seen:v1','1'));
+});
+
+test('Turnstile waits for verification, cancels on form changes and uses a compact widget on small screens',async({page})=>{
+  await page.addInitScript(()=>{(window as any).__turnstileMode='manual';});await page.setViewportSize({width:320,height:800});
+  await page.goto('/#account');await page.locator('#auth-email').fill('a@example.test');await page.locator('#auth-password').fill('test-password');
+  const requests:any[]=[];page.on('request',r=>{if(r.url().includes('/auth/v1/token'))requests.push(r.postDataJSON());});
+  await page.locator('#auth-submit').click();await expect(page.getByRole('button',{name:'테스트 보안 확인'})).toBeVisible();expect(requests).toHaveLength(0);await expect(page.locator('#auth-submit')).toBeDisabled();
+  expect(await page.evaluate(()=>(window as any).__turnstileTest.sizes)).toEqual(['compact']);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.locator('[data-auth-mode="signup"]').click();await expect(page.locator('.turnstile-check')).toHaveCount(0);await expect(page.locator('#auth-submit')).toBeEnabled();expect(requests).toHaveLength(0);
+  await page.locator('[data-auth-mode="login"]').click();await page.locator('#auth-submit').click();await page.getByRole('button',{name:'테스트 보안 확인'}).click();await expect(page.locator('#member-box')).toBeVisible();
+  expect(requests).toHaveLength(1);expect(requests[0].gotrue_meta_security.captcha_token).toMatch(/^test-captcha-/);await expect(page.locator('.turnstile-check')).toHaveCount(0);
+});
+
+test('Turnstile errors and expiry block authentication; each password retry gets a fresh token',async({page})=>{
+  await page.addInitScript(()=>{(window as any).__turnstileMode='expired';});await page.goto('/#account');await page.locator('#auth-email').fill('a@example.test');await page.locator('#auth-password').fill('wrong-password');
+  const requests:any[]=[];page.on('request',r=>{if(r.url().includes('/auth/v1/token'))requests.push(r.postDataJSON());});
+  await page.locator('#auth-submit').click();await expect(page.locator('#auth-status')).toHaveText('보안 확인이 만료됐습니다. 다시 시도해 주세요.');expect(requests).toHaveLength(0);
+  await page.evaluate(()=>{(window as any).__turnstileTest.mode='error';});await page.locator('#auth-submit').click();await expect(page.locator('#auth-status')).toHaveText('보안 확인에 실패했습니다. 다시 시도해 주세요.');expect(requests).toHaveLength(0);
+  await page.evaluate(()=>{(window as any).__turnstileTest.mode='pass';});await page.locator('#auth-submit').click();await expect(page.locator('#auth-status')).toHaveText('이메일과 비밀번호를 확인해 주세요.');
+  await page.locator('#auth-password').fill('test-password');await page.locator('#auth-submit').click();await expect(page.locator('#member-box')).toBeVisible();expect(requests).toHaveLength(2);
+  const proof=requests[0].gotrue_meta_security.captcha_token;expect(requests[1].gotrue_meta_security.captcha_token).not.toBe(proof);
+  const replay=await page.request.post('http://127.0.0.1:54329/auth/v1/token?grant_type=password',{data:{email:'a@example.test',password:'test-password',gotrue_meta_security:{captcha_token:proof}}});expect(replay.ok()).toBe(false);
+});
+
+test('blocked Turnstile scripts fail closed and a later retry can load verification successfully',async({page})=>{
+  const sdk='https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';await page.route(sdk,r=>r.abort());await page.goto('/#account');await page.locator('#auth-email').fill('a@example.test');await page.locator('#auth-password').fill('test-password');
+  let attempts=0;page.on('request',r=>{if(r.url().includes('/auth/v1/token'))attempts++;});await page.locator('#auth-submit').click();await expect(page.locator('#auth-status')).toContainText('보안 확인을 불러오지 못했습니다');expect(attempts).toBe(0);await expect(page.locator('#auth-submit')).toBeEnabled();
+  await page.unroute(sdk);await page.route(sdk,r=>r.fulfill({contentType:'application/javascript',body:turnstileSdkFixture}));await page.locator('#auth-submit').click();await expect(page.locator('#member-box')).toBeVisible();expect(attempts).toBe(1);
+});
+
+test('password reset forwards a fresh proof and direct Auth requests without a proof are rejected',async({page})=>{
+  await page.goto('/#account');await page.locator('[data-auth-mode="reset"]').click();await page.locator('#auth-email').fill('a@example.test');const sent=page.waitForRequest(r=>r.url().includes('/auth/v1/recover'));
+  await page.locator('#auth-submit').click();const proof=(await sent).postDataJSON().gotrue_meta_security.captcha_token;expect(proof).toMatch(/^test-captcha-/);await expect(page.locator('#auth-status')).toHaveText('가입한 이메일이면 비밀번호 재설정 메일이 발송됩니다.');
+  for(const path of ['token?grant_type=password','signup','recover']){const result=await page.request.post('http://127.0.0.1:54329/auth/v1/'+path,{data:{email:'a@example.test',password:'test-password'}});expect(result.ok()).toBe(false);}
 });
 
 test('AI resolves registered names and typo confirmations, and noisy food clues use real menu forms',async({page})=>{
@@ -175,11 +211,13 @@ test('first-visit help still works without browser storage or a ready catalog AP
   }finally{await context.close();}
 });
 async function login(page:any,email='a@example.test'){
+  await installTurnstile(page);
   await page.goto('/#account');await page.locator('[data-auth-mode="login"]').click();await page.locator('#auth-email').fill(email);await page.locator('#auth-password').fill('test-password');
   const signed=page.waitForResponse((r:any)=>r.url().includes('/auth/v1/token'));
   await page.locator('#auth-submit').click();await expect(page.locator('#member-box')).toBeVisible();return (await (await signed).json()).access_token;
 }
 async function signupMember(page:any,email:string,configure?:()=>Promise<void>){
+  await installTurnstile(page);
   await page.goto('/#account');await page.locator('[data-auth-mode="signup"]').click();
   await page.locator('#auth-email').fill(email);await page.locator('#auth-password').fill('test-password');await page.locator('#auth-password-confirm').fill('test-password');await page.locator('#auth-nickname').fill('새로운 밥친구');
   await expect(page.locator('#auth-form .taste-section')).toHaveCount(0);await expect(page.locator('#taste-onboarding')).not.toBeVisible();
@@ -668,7 +706,7 @@ test('administrator forces withdrawal, member cannot restore it, and cancellatio
     const blocked=await page.request.post(api+'/rest/v1/rpc/is_active_member',{headers,data:{}});expect(await blocked.json()).toBe(false);
     const published=await (await page.request.post(api+'/rest/v1/rpc/search_posts',{data:{p_query:'강제 탈퇴 확인용 글',p_offset:0,p_mine:false}})).json();expect(published).toHaveLength(0);
     await page.reload();await expect(page.locator('#account-recovery-title')).toHaveText('운영자가 탈퇴 처리한 계정입니다');await expect(page.locator('#account-recovery-detail')).toContainText('반복적인 스팸 게시글 등록');await expect(page.locator('#account-recovery-detail')).not.toContainText('복원은');await expect(page.locator('#account-recovery-restore-note')).toHaveText('복원은 운영자만 처리할 수 있습니다.');for(const width of [390,320]){await page.setViewportSize({width,height:844});const reason=(await page.locator('#account-recovery-detail').boundingBox())!,note=(await page.locator('#account-recovery-restore-note').boundingBox())!;expect(note.y).toBeGreaterThanOrEqual(reason.y+reason.height);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}await page.screenshot({path:'build/forced-account-separated-note.png'});await expect(page.locator('#account-restore-form')).toBeHidden();await expect(page.locator('#account-recovery-contact a')).toHaveAttribute('href','mailto:aaidantest@gmail.com');
-    const bypass=await page.request.post(api+'/functions/v1/delete-account',{headers,data:{action:'restore',confirm:true,expectedUserId:original.user.id,password:'test-password'}});expect(bypass.ok()).toBe(false);
+    const bypass=await page.request.post(api+'/functions/v1/delete-account',{headers,data:{action:'restore',confirm:true,expectedUserId:original.user.id,password:'test-password',captchaToken:'test-captcha-'+crypto.randomUUID()}});expect(bypass.ok()).toBe(false);
     for(const width of [390,320]){await staff.setViewportSize({width,height:844});expect(await staff.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}await staff.locator('#admin-users-section').scrollIntoViewIfNeeded();await staff.screenshot({path:'build/admin-forced-withdrawal-mobile.png'});
     staff.once('dialog',d=>d.accept());await row.getByRole('button',{name:'강제 탈퇴 취소',exact:true}).click();await expect(staff.locator('#admin-user-status')).toContainText('강제 탈퇴를 취소했습니다.');expect(await (await page.request.post(api+'/rest/v1/rpc/is_active_member',{headers,data:{}})).json()).toBe(false);
     await page.locator('#account-recovery-logout').click();await login(page,email);await expect(page.locator('#member-box')).toBeVisible();await page.locator('.service-nav a[href="#community"]').click();await page.locator('#post-search').fill('강제 탈퇴 확인용 글');await expect(page.locator('#post-list .post-card')).toHaveCount(1);

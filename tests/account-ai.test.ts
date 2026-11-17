@@ -371,6 +371,18 @@ async function seedAuthArtifacts(id:string,email:string){
   await db.query('insert into auth.refresh_tokens(user_id,session_id) values($1,$2),($1,null)',[id,session]);await db.query('insert into auth.flow_state(user_id) values($1)',[id]);
   return {session,factor};
 }
+
+test('withdrawal and restoration forward the one-use CAPTCHA only to password verification and reject malformed or failed proofs',async()=>{
+  const seen:(string|undefined)[]=[],changed:string[]=[],verified={userId:A,token:'test-auth-token',sessionId:A,session:{access_token:'test-auth-token',refresh_token:'test-auth-refresh'}};
+  const deps:AccountDeletionDependencies={status:async()=>({allowed:true}),verifyPassword:async(_password,captchaToken)=>{seen.push(captchaToken);if(captchaToken==='rejected')throw new AccountDeletionError('보안 확인에 실패했습니다.',403);return verified;},revokeSessions:async()=>{},withdraw:async()=>{changed.push('withdraw');return {restoreUntil:'2026-11-24T00:00:00Z'};},restore:async()=>{changed.push('restore');}};
+  const body={retentionDays:7,confirm:true,expectedUserId:A,password:'test-password'};
+  for(const value of ['',{},'x'.repeat(2049)])await assert.rejects(()=>deleteOwnAccount({...body,captchaToken:value},A,deps),/보안 확인/);
+  assert.deepEqual(seen,[]);assert.deepEqual(changed,[]);
+  await assert.rejects(()=>deleteOwnAccount({...body,captchaToken:'rejected'},A,deps),/보안 확인/);assert.deepEqual(changed,[]);
+  await deleteOwnAccount({...body,captchaToken:'fresh-withdraw-token'},A,deps);
+  await deleteOwnAccount({...body,action:'restore',captchaToken:'fresh-restore-token'},A,deps);
+  assert.deepEqual(seen,['rejected','fresh-withdraw-token','fresh-restore-token']);assert.deepEqual(changed,['withdraw','restore']);
+});
 async function countAuthArtifacts(id:string){
   const pairs=[['auth.users','id'],['auth.identities','user_id'],['auth.sessions','user_id'],['auth.one_time_tokens','user_id'],['auth.mfa_factors','user_id'],['auth.refresh_tokens','user_id'],['auth.flow_state','user_id']];
   return Object.fromEntries(await Promise.all(pairs.map(async([table,key])=>[table,(await db.query<any>(`select count(*) n from ${table} where ${key}=$1`,[id])).rows[0].n])));

@@ -89,3 +89,8 @@ npm run test:browser
 DB 테스트는 PostgreSQL 엔진 PGlite에서 마이그레이션과 원본 데이터를 실행합니다. 계정 간 권한, 관리자 작업 거부, 승인·이력의 원자성, 실제 미향일식·태평소국밥 사례를 확인합니다. 영업시간은 JDK 21로 기존 Java와 24,420개 경우를 비교합니다. Java는 이전·비교 테스트에 사용하며 웹 빌드에는 필요하지 않습니다.
 
 브라우저 테스트는 로컬 Auth/PostgREST 대역과 PostgreSQL/RLS를 연결합니다. 실제 메일 발송·Gemini 응답·지도 인증은 서비스 설정 후 별도로 확인합니다. Playwright 브라우저가 없으면 `npx playwright install chromium`을 먼저 실행합니다.
+## Cloudflare Turnstile
+
+회원가입·로그인·비밀번호 재설정과 비밀번호 변경·탈퇴·복원 시의 비밀번호 재확인에 Turnstile 토큰을 전달합니다. 공개 사이트 키는 Vercel production의 `VITE_TURNSTILE_SITE_KEY`에 설정합니다. 비밀 키는 프런트엔드·Git·Edge 환경 변수가 아닌 **Supabase Authentication → Protection → CAPTCHA**에서 제공자를 Turnstile로 선택해 저장합니다.
+
+웹과 `delete-account` Edge의 새 버전을 먼저 배포한 뒤 CAPTCHA 보호를 켭니다. Cloudflare 위젯의 호스트 목록에 실제 접속 도메인이 있어야 합니다. 키를 생략한 로컬 환경에서는 위젯을 실행하지 않지만, 운영 Supabase에서 켠 CAPTCHA 검증을 우회할 수는 없습니다. 로컬 자동 검증은 운영 계정 대신 가상 Auth와 테스트용 SDK를 사용합니다.
