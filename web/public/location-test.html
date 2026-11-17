@@ -1,0 +1,50 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>밥픽 · 휴대폰 위치 테스트</title>
+<style>
+  :root{color-scheme:light}*{box-sizing:border-box}[hidden]{display:none!important}
+  body{margin:0;padding:24px;background:#fff8e5;color:#302a26;font-family:"Malgun Gothic","Apple SD Gothic Neo",sans-serif;word-break:keep-all}
+  main{max-width:500px;margin:8vh auto;padding:28px;background:white;border:1px solid #eedfc9;border-radius:22px}
+  .brand{color:#c64706;font-size:24px;font-weight:900;margin:0 0 24px}h1{font-size:24px;margin:0 0 20px}
+  p{font-size:13px;line-height:1.8;color:#887866}dl{margin:20px 0}dl>div{display:grid;grid-template-columns:110px minmax(0,1fr);gap:12px;padding:10px 0;border-bottom:1px solid #f1e6d7;font-size:13px;line-height:1.7}
+  dt{color:#887866}dd{margin:0;overflow-wrap:anywhere}button{width:100%;border:0;border-radius:12px;padding:15px;background:#c64706;color:white;font:inherit;font-size:15px;font-weight:700;cursor:pointer}
+  button:disabled{opacity:.5;cursor:default}a{color:#c64706}button:focus-visible,a:focus-visible{outline:3px solid #ff7939;outline-offset:4px}
+</style></head><body><main>
+  <p class="brand">밥픽.</p><h1>휴대폰 위치 테스트</h1>
+  <p id="status" role="status" aria-live="polite">버튼을 눌러 현재 위치를 확인하세요.</p>
+  <button id="locate" type="button">현재 위치 확인</button>
+  <dl id="values" hidden>
+    <div><dt>위도</dt><dd id="latitude"></dd></div>
+    <div><dt>경도</dt><dd id="longitude"></dd></div>
+    <div><dt>정확도</dt><dd id="accuracy"></dd></div>
+    <div><dt>측정 시각</dt><dd id="measured-at"></dd></div>
+    <div><dt>GPS 측정 여부</dt><dd>브라우저에서 구분 불가</dd></div>
+  </dl>
+  <p>조회한 위치는 길찾기 출발지에 자동 입력하거나 서버에 저장하지 않습니다.</p>
+  <p><a href="/">추천 화면으로 돌아가기</a></p>
+</main><script>
+  const el=id=>document.getElementById(id),button=el('locate');
+  const secure=window.isSecureContext,available=!!navigator.geolocation;
+  if(!secure){el('status').textContent='위치 확인에는 HTTPS 접속이 필요합니다.';button.disabled=true;}
+  else if(!available){el('status').textContent='이 브라우저는 위치 확인을 지원하지 않습니다.';button.disabled=true;}
+  button.onclick=()=>{
+    if(button.disabled||!secure||!available)return;
+    button.disabled=true;el('values').hidden=true;el('status').textContent='현재 위치를 확인하고 있어요.';
+    const failed=error=>{
+      button.disabled=false;
+      el('status').textContent=error?.code===1?'브라우저와 휴대폰 설정에서 위치 사용을 허용해 주세요.'
+        :error?.code===3?'위치 확인 시간이 초과되었습니다. 다시 시도해 주세요.'
+        :'위치를 가져오지 못했습니다. 휴대폰 위치 설정을 확인해 주세요.';
+    };
+    try{
+      navigator.geolocation.getCurrentPosition(position=>{
+        const c=position.coords;
+        if(!Number.isFinite(c.latitude)||!Number.isFinite(c.longitude)||Math.abs(c.latitude)>90||Math.abs(c.longitude)>180){failed();return;}
+        el('latitude').textContent=c.latitude.toFixed(6);el('longitude').textContent=c.longitude.toFixed(6);
+        el('accuracy').textContent=Number.isFinite(c.accuracy)&&c.accuracy>=0?'± '+c.accuracy.toLocaleString('ko-KR',{maximumFractionDigits:1})+' m':'미제공';
+        el('measured-at').textContent=Number.isFinite(position.timestamp)?new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',dateStyle:'short',timeStyle:'medium'}).format(new Date(position.timestamp)):'미제공';
+        el('values').hidden=false;el('status').textContent='현재 위치를 확인했습니다.';button.disabled=false;
+      },failed,{enableHighAccuracy:true,timeout:20000,maximumAge:0});
+    }catch{failed();}
+  };
+</script></body></html>

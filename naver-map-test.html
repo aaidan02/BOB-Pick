@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#174b3b">
+  <title>BOB Pick · 오늘 뭐 먹지?</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div class="page">
+    <header class="header">
+      <a class="brand" href="/" aria-label="BOB Pick 처음으로"><span class="brand-icon" aria-hidden="true">밥</span> BOB <span class="brand-light">Pick</span></a>
+      <span class="location-tag">대전 · 둔산동</span>
+    </header>
+
+    <main>
+      <section class="intro" aria-labelledby="page-title">
+        <p class="eyebrow">고민은 줄이고, 맛있는 한 끼로.</p>
+        <h1 id="page-title">오늘 뭐 먹지?<br><span>한 번에 골라요.</span></h1>
+        <p class="intro-copy">랜덤으로 고른 음식과 음식점 위치를 한눈에 확인하세요.</p>
+      </section>
+
+      <div class="picker-layout">
+        <section class="picker-panel" aria-label="랜덤 음식 추천">
+          <div class="panel-top"><span class="small-label">TODAY’S PICK</span><span id="dataset-count" class="count-tag">불러오는 중</span></div>
+
+          <div id="empty-state" class="empty-state">
+            <div class="bowl" aria-hidden="true">🍚</div>
+            <h2>오늘의 한 끼를<br>골라 드릴게요.</h2>
+            <p>버튼을 누르면 음식점 한 곳과<br>그곳의 대표메뉴를 추천해요.</p>
+          </div>
+
+          <article id="selection" hidden>
+            <p class="result-label">오늘의 추천 메뉴</p>
+            <h2 id="menu-name"></h2>
+            <p id="restaurant-name" class="restaurant-name"></p>
+            <dl class="restaurant-info">
+              <div><dt>주소</dt><dd id="address"></dd></div>
+              <div><dt>전화</dt><dd id="phone"></dd></div>
+              <div><dt>운영시간</dt><dd id="hours"></dd></div>
+            </dl>
+            <a id="naver-link" class="map-link" target="_blank" rel="noopener noreferrer">네이버 지도에서 확인 <span aria-hidden="true">↗</span></a>
+          </article>
+
+          <div class="picker-actions">
+            <button id="pick-button" type="button" disabled><span id="button-label">오늘의 메뉴 뽑기</span><span aria-hidden="true">↗</span></button>
+            <p id="selection-status" class="selection-status" role="status" aria-live="polite">음식점 데이터를 불러오는 중입니다.</p>
+          </div>
+        </section>
+
+        <section class="map-panel" aria-labelledby="map-title">
+          <div class="map-heading"><div><p class="small-label">FIND YOUR MEAL</p><h2 id="map-title">여기서 만나요</h2></div><span class="map-dot" aria-hidden="true"></span></div>
+          <div class="map-area">
+            <div id="map" aria-label="선택한 음식점의 위치를 표시하는 네이버 지도"></div>
+            <div id="map-overlay" class="map-overlay"><p id="map-overlay-text">네이버 지도를 불러오는 중입니다.</p></div>
+          </div>
+          <p id="map-status" class="map-status" role="status" aria-live="polite">음식점을 뽑으면 해당 위치에 마커가 표시됩니다.</p>
+        </section>
+      </div>
+
+      <details id="record-details" class="record-details" hidden>
+        <summary>선택한 음식점의 원본 정보 보기</summary>
+        <dl id="record-fields"></dl>
+      </details>
+    </main>
+    <footer class="footer"><span>BOB Pick</span><span>오늘도 맛있는 하루.</span></footer>
+  </div>
+</body>
+</html>

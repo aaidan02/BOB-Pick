@@ -1,0 +1,25 @@
+project_id = "bob-pick"
+
+[api]
+enabled = true
+max_rows = 10000
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]
+
+[auth]
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://localhost:5173"]
+enable_signup = true
+minimum_password_length = 8
+
+[functions.ai-recommend]
+# New publishable keys are not JWTs; the handler validates the user token itself.
+verify_jwt = false
+
+[functions.delete-account]
+verify_jwt = false
+
+[functions.community-media]
+verify_jwt = false

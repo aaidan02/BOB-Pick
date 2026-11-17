@@ -1,0 +1,68 @@
+﻿밥픽 최신 웹 버전 실행 방법 — VS Code / Windows
+
+1. ZIP을 압축 해제하고 BOB-Pick 폴더를 VS Code로 연다.
+   package.json, README.md, web, supabase가 함께 보이는 폴더가 루트다.
+
+2. Node.js 24 LTS를 설치하고 VS Code를 다시 연다.
+   터미널에서 아래 명령으로 설치 여부를 확인한다.
+
+   node --version
+   npm --version
+
+3. VS Code의 터미널을 PowerShell로 열고 프로젝트 루트에서 실행한다.
+
+   npm ci
+   Copy-Item .env.example .env.local
+
+   이미 .env.local을 설정했다면 복사 명령은 생략한다.
+   PowerShell에서 npm.ps1 실행 정책 오류가 날 때는 npm 대신 npm.cmd를 사용한다.
+
+4. .env.local을 열고 공개 환경설정 값을 넣는다.
+
+   VITE_SUPABASE_URL=https://rllfxdybuncooswotccs.supabase.co
+   VITE_SUPABASE_PUBLISHABLE_KEY=본인 프로젝트의 공개 publishable 키
+   VITE_NAVER_MAP_CLIENT_ID=네이버 Maps 공개 클라이언트 ID
+
+   Gemini 키는 이 파일에 넣지 않는다.
+   Gemini 키는 Supabase 대시보드 → Edge Functions → Secrets의
+   GEMINI_API_KEY로 설정한다. 기존 프로젝트에는 사용자가 등록한 설정을 사용한다.
+
+5. 개발 서버를 실행한다.
+
+   npm run dev
+
+   PC 브라우저에서 http://localhost:5173 으로 접속한다.
+   종료할 때는 실행한 터미널에서 Ctrl+C를 누른다.
+   .env.local을 수정했다면 개발 서버를 다시 시작한다.
+
+6. 결과물을 빌드하려면 다음 명령을 사용한다.
+
+   npm run build
+
+   빌드 결과는 dist 폴더에 생성된다.
+
+7. 최신 웹 버전과 이전 Java 버전을 구분한다.
+
+   최신: web 폴더 + npm run dev, 별도 Java 서버 불필요
+   이전: 루트의 Java 파일 + start.bat/start.sh, 자세한 방법은 docs/legacy-java.md
+
+8. 이미 배포된 사이트를 이용하려면 설치 없이 아래 주소로 접속한다.
+
+   https://bob-pick.vercel.app
+
+9. 데이터와 서버 구성
+
+   현재 운영 Supabase를 이용할 때는 초기 DB 설치를 다시 실행하지 않는다.
+   새 Supabase 프로젝트를 만들 경우에만 docs/cloud-deployment.md에 따라
+   마이그레이션, seed.sql, AI 함수, Auth URL, 관리자 권한을 설정한다.
+
+   소스 ZIP은 운영 DB의 회원·글·찜·신청 내역을 포함하는 백업이 아니다.
+   CSV와 초기 데이터는 포함되어 있다.
+
+10. 자세한 정리
+
+   docs/project-summary-2026-11-09.md: 프로젝트 전체 정리
+   docs/development-history-2026-11-09.txt: 개발 과정 메모장
+   docs/cloud-deployment.md: Supabase·Vercel 배포 방법
+
+이 메모장 파일은 Windows에서 한글을 읽기 쉽도록 UTF-8 BOM으로 제공한다.
