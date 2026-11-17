@@ -15,7 +15,7 @@ test('a probe distinguishes CAPTCHA rejection, credential processing, throttling
   assert.equal(await probeCaptcha(config,undefined,undefined,transport(400,{error_code:'captcha_failed'})),'rejected');
   assert.equal(await probeCaptcha(config,undefined,undefined,transport(400,{error_description:'Invalid login credentials'})),'accepted');
   assert.equal(await probeCaptcha(config,undefined,undefined,transport(429,{code:'over_request_rate_limit'})),'limited');
-  for(const status of [200,401,403,500])assert.equal(await probeCaptcha(config,undefined,undefined,transport(status,{access_token:'never-persist-this',code:'captcha_failed'})),'unknown');
+  for(const status of [200,401,403,500,522])assert.equal(await probeCaptcha(config,undefined,undefined,transport(status,{access_token:'never-persist-this',code:'captcha_failed'})),'unknown');
   assert.equal(await probeCaptcha(config,undefined,undefined,transport(400,{message:'unexpected'})),'unknown');
 });
 test('probe failures and abort signals cannot be reported as successful checks',async()=>{

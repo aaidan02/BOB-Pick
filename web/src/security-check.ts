@@ -10,6 +10,7 @@ const checks=[
   ['replay','인증 재사용 차단','한 번 사용한 인증 토큰으로 다시 요청하면 거부되는지 확인해요.','재사용 차단 확인']
 ] as const;
 type Kind=typeof checks[number][0];
+class CheckUnavailableError extends Error{}
 export function securityCheckMarkup(){return `<section id="security-check-panel" class="service-panel" hidden aria-labelledby="security-check-heading">
   <div class="page-heading heading-actions"><div><p class="section-eyebrow">밥픽 운영</p><h1 id="security-check-heading">보안 검사</h1><p>Turnstile이 제대로 동작하는지 직접 확인해요.</p></div><a class="button-link secondary" href="#admin">관리자로 돌아가기</a></div>
   <p id="security-check-guard" class="surface empty-state">관리자 로그인 후 사용할 수 있어요. <a href="#account">로그인하기 →</a></p>
@@ -27,14 +28,17 @@ export function initSecurityCheck(){
     for(const [kind]of checks){el('security-check-'+kind).dataset.checkState='idle';el('security-check-result-'+kind).textContent='아직 실행하지 않았어요.';}
     el('security-check-summary').textContent='통과 0 / 4';el('security-check-preview-status').textContent='';el('security-check-cooldown').textContent='';buttons().forEach(b=>b.disabled=false);
   }
-  function show(kind:Kind,state:string,text:string){outcomes.set(kind,state);el('security-check-'+kind).dataset.checkState=state;el('security-check-result-'+kind).textContent=text;el('security-check-summary').textContent='통과 '+[...outcomes.values()].filter(x=>x==='passed').length+' / 4';}
-  function assertResult(result:CaptchaProbeResult){if(result==='limited')throw Error('요청이 많습니다. 잠시 후 다시 시도해 주세요.');if(result==='unknown')throw Error('서버 응답을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.');}
+  function show(kind:Kind,state:string,text:string){outcomes.set(kind,state);el('security-check-'+kind).dataset.checkState=state;el('security-check-result-'+kind).textContent=text;const values=[...outcomes.values()],deferred=values.filter(x=>x==='unavailable').length;el('security-check-summary').textContent='통과 '+values.filter(x=>x==='passed').length+' / 4'+(deferred?' · 확인 보류 '+deferred:'');}
+  function assertResult(result:CaptchaProbeResult){if(result==='limited')throw new CheckUnavailableError('확인 보류 · 요청이 많습니다. 잠시 후 다시 검사해 주세요.');if(result==='unknown')throw new CheckUnavailableError('확인 보류 · 인증 서버 응답을 확인하지 못했습니다. 잠시 후 다시 검사해 주세요.');}
   for(const [kind]of checks)el<HTMLFormElement>('security-check-'+kind).onsubmit=event=>{
     event.preventDefault();if(busy||timer!==undefined)return;
     void(async()=>{
       const mine=version,actor=owner;if(!actor||!admin||user?.id!==actor)return;busy=true;controller=new AbortController();const signal=controller.signal;buttons().forEach(b=>b.disabled=true);show(kind,'running','검사 중입니다…');
       try{
-        if(!await rpc<boolean>('is_admin')||version!==mine)throw Error('현재 관리자만 검사할 수 있어요.');
+        let allowed:boolean;
+        try{allowed=await rpc<boolean>('is_admin',{},AbortSignal.any([signal,AbortSignal.timeout(10000)]));}
+        catch{if(signal.aborted)return;throw new CheckUnavailableError('확인 보류 · 관리자 확인 서버의 연결이 지연됐습니다. 잠시 후 다시 검사해 주세요.');}
+        if(!allowed||version!==mine)throw Error('현재 관리자만 검사할 수 있어요.');
         let result:CaptchaProbeResult;
         if(kind==='missing'||kind==='invalid')result=await probeCaptcha(config,kind==='missing'?undefined:'not-a-valid-turnstile-token',signal);
         else result=await withCaptcha(el('security-check-'+kind),async token=>{
@@ -46,7 +50,14 @@ export function initSecurityCheck(){
         if(version!==mine||signal.aborted)return;assertResult(result);
         if(result==='rejected')show(kind,'passed','통과 · '+(kind==='live'?'정상 인증은 확인하고 인증 없는 요청은 거부했어요.':kind==='replay'?'사용한 인증 토큰의 재사용을 거부했어요.':kind==='missing'?'인증 없는 요청을 거부했어요.':'잘못된 인증 토큰을 거부했어요.'));
         else show(kind,'failed','확인 필요 · 인증이 없는 요청도 다음 단계로 넘어갔어요. Supabase의 CAPTCHA 보호 설정을 확인해 주세요.');
-      }catch(error){if(version===mine&&!signal.aborted)show(kind,'failed',friendly(error));}
+      }catch(error){
+        if(version===mine&&!signal.aborted){
+          const network=error instanceof Error&&(error.name==='TimeoutError'||/fetch|network|timeout|timed out|connection/i.test(error.message));
+          if(error instanceof CheckUnavailableError)show(kind,'unavailable',error.message);
+          else if(network)show(kind,'unavailable','확인 보류 · 인증 서버 연결이 지연됐습니다. 잠시 후 다시 검사해 주세요.');
+          else show(kind,'failed',friendly(error));
+        }
+      }
       finally{if(version===mine){busy=false;controller=undefined;el('security-check-cooldown').textContent='연속 요청을 줄이기 위해 5초 후 다시 검사할 수 있어요.';timer=window.setTimeout(()=>{timer=undefined;el('security-check-cooldown').textContent='';buttons().forEach(b=>b.disabled=false);},5000);}}
     })();
   };
