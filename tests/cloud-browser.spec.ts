@@ -107,6 +107,34 @@ test.beforeEach(async({page})=>{
   await page.addInitScript(()=>localStorage.setItem('bob-pick:help-seen:v1','1'));
 });
 
+test('administrators run four real security checks with disposable credentials and preview errors without changing account or AI usage',async({page})=>{
+  const token=await login(page,'admin@example.test'),api='http://127.0.0.1:54329',headers={Authorization:'Bearer '+token};
+  const quotaBefore=await (await page.request.post(api+'/rest/v1/rpc/ai_quota_status',{headers,data:{}})).json();
+  await page.locator('#admin-link').click();await page.locator('#admin-security-link').click();await expect(page).toHaveURL(/#security-check$/);await expect(page.locator('#security-check-content')).toBeVisible();
+  await page.clock.install();const sent:any[]=[];page.on('request',r=>{if(r.url().includes('/auth/v1/token'))sent.push(r.postDataJSON());});
+  for(const kind of ['live','missing','invalid','replay']){
+    await page.locator('#security-check-'+kind+' button[type="submit"]').click();await expect(page.locator('#security-check-'+kind)).toHaveAttribute('data-check-state','passed');await page.clock.fastForward(5100);
+  }
+  await expect(page.locator('#security-check-summary')).toHaveText('통과 4 / 4');expect(sent).toHaveLength(6);for(const row of sent)expect(row.email).toMatch(/^bobpick-security-check-.*@example\.invalid$/);
+  await page.getByRole('button',{name:'실패 예시',exact:true}).click();await expect(page.locator('#security-check-preview-status')).toContainText('보안 확인에 실패');await page.getByRole('button',{name:'만료 예시',exact:true}).click();await expect(page.locator('#security-check-preview-status')).toContainText('보안 확인이 만료');expect(sent).toHaveLength(6);await expect(page.locator('#security-check-summary')).toHaveText('통과 4 / 4');await expect(page.locator('#security-check-content')).not.toContainText('test-captcha-');
+  await page.setViewportSize({width:320,height:800});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.locator('#security-check-heading').scrollIntoViewIfNeeded();await page.screenshot({path:'build/security-check-mobile.png',fullPage:true});await page.setViewportSize({width:1280,height:900});await page.screenshot({path:'build/security-check-desktop.png',fullPage:true});
+  const quotaAfter=await (await page.request.post(api+'/rest/v1/rpc/ai_quota_status',{headers,data:{}})).json();expect(quotaAfter).toEqual(quotaBefore);await page.locator('.service-nav a[href="#account"]').click();await expect(page.locator('#member-email')).toHaveText('admin@example.test');
+});
+
+test('security checks expose missing server protection and throttling instead of reporting a false pass',async({page})=>{
+  await login(page,'admin@example.test');await page.goto('/#security-check');await page.clock.install();
+  await page.route('**/auth/v1/token**',r=>r.fulfill({status:400,json:{code:'invalid_credentials',message:'Invalid login credentials'}}));await page.locator('[data-security-check="live"]').click();await expect(page.locator('#security-check-result-live')).toContainText('CAPTCHA 보호 설정');await expect(page.locator('#security-check-live')).toHaveAttribute('data-check-state','failed');await expect(page.locator('#security-check-summary')).toHaveText('통과 0 / 4');
+  await page.clock.fastForward(5100);await page.route('**/auth/v1/token**',r=>r.fulfill({status:429,json:{code:'over_request_rate_limit'}}));await page.locator('[data-security-check="missing"]').click();await expect(page.locator('#security-check-result-missing')).toContainText('요청이 많습니다');await expect(page.locator('#security-check-summary')).toHaveText('통과 0 / 4');
+  await page.clock.fastForward(5100);let attempts=0;page.on('request',r=>{if(r.url().includes('/auth/v1/token'))attempts++;});await page.route('**/rest/v1/rpc/is_admin',r=>r.fulfill({json:false}));await page.locator('[data-security-check="invalid"]').click();await expect(page.locator('#security-check-result-invalid')).toContainText('현재 관리자만');expect(attempts).toBe(0);
+});
+
+test('ordinary members cannot view security tools and logout clears previous administrator check results',async({page,browser})=>{
+  await login(page);await page.goto('/#security-check');await expect(page.locator('#security-check-guard')).toBeVisible();await expect(page.locator('#security-check-content')).toBeHidden();
+  const context=await browser.newContext(),staff=await context.newPage();try{
+    await login(staff,'admin@example.test');await staff.goto('/#security-check');await staff.locator('[data-security-check="missing"]').click();await expect(staff.locator('#security-check-summary')).toHaveText('통과 1 / 4');await staff.locator('.service-nav a[href="#account"]').click();await staff.locator('#logout').click();await staff.goto('/#security-check');await expect(staff.locator('#security-check-guard')).toBeVisible();await expect(staff.locator('#security-check-content')).toBeHidden();await expect(staff.locator('#security-check-summary')).toHaveText('통과 0 / 4');
+  }finally{await context.close();}
+});
+
 test('Turnstile waits for verification, cancels on form changes and uses a compact widget on small screens',async({page})=>{
   await page.addInitScript(()=>{(window as any).__turnstileMode='manual';});await page.setViewportSize({width:320,height:800});
   await page.goto('/#account');await page.locator('#auth-email').fill('a@example.test');await page.locator('#auth-password').fill('test-password');

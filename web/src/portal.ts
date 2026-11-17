@@ -1,4 +1,5 @@
 import {adminUsersMarkup,initAdminUsers} from './admin-users';
+import {securityCheckMarkup,initSecurityCheck} from './security-check';
 import {restoreMarkup,initRestore,loadRestore} from './admin-restore';
 import {accountMarkup,initAccount,loadAccountOverview} from './account';
 import {supportMarkup,initSupport,loadSupport,loadAdminSupport} from './support';
@@ -73,7 +74,7 @@ export async function initPortal(){
     </div>
   </section>
   <section id="admin-panel" class="service-panel" hidden aria-labelledby="admin-heading">
-    <div class="page-heading heading-actions"><div><p class="section-eyebrow">밥픽 운영</p><h1 id="admin-heading">관리자</h1><p>신청을 검토하고 관리자 권한을 관리해요.</p></div><div class="button-row"><a id="admin-restore-link" class="button-link secondary" href="#admin-restore" hidden>복원하기</a><button id="admin-reload" type="button" class="secondary">새로고침</button></div></div>
+    <div class="page-heading heading-actions"><div><p class="section-eyebrow">밥픽 운영</p><h1 id="admin-heading">관리자</h1><p>신청을 검토하고 관리자 권한을 관리해요.</p></div><div class="button-row"><a id="admin-restore-link" class="button-link secondary" href="#admin-restore" hidden>복원하기</a><a id="admin-security-link" class="button-link secondary" href="#security-check" hidden>보안 검사</a><button id="admin-reload" type="button" class="secondary">새로고침</button></div></div>
     <p id="admin-status" class="form-status" role="status"></p><div id="admin-content" hidden>
       <div class="admin-summary" role="group" aria-label="관리 현황">
         <div class="admin-stat"><small>현재 관리자</small><strong id="admin-summary-members">—</strong></div>
@@ -97,16 +98,16 @@ export async function initPortal(){
       </div></section><section id="admin-records-community" class="admin-record-column" role="region" aria-labelledby="admin-community-heading" hidden>${adminCommunityMarkup()}</section></div></div>
       <details class="surface audit-section"><summary>변경 이력 보기</summary><div id="admin-logs"></div></details>
     </div>
-  </section>${restoreMarkup()}`;
+  </section>${restoreMarkup()}${securityCheckMarkup()}`;
   el('account-art').prepend(document.querySelector('.hero-art')!.cloneNode(true));
   initAccount();initSupport();
-  initCommunity();initFavorites();initRequests();initAdminAccounts();initAdminUsers();initAdminRecords();initRestore();
+  initCommunity();initFavorites();initRequests();initAdminAccounts();initAdminUsers();initAdminRecords();initRestore();initSecurityCheck();
   function route(){
     let page=location.hash.slice(1);
     if(isLegalPage(page)){showLegalPage(page);return;}
     if(accountRecovery&&page!=='account'){history.replaceState(null,'','#account');page='account';}
     el('legal-view').hidden=true;
-    const service=['account','favorites','community','requests','admin','admin-restore','support'].includes(page);
+    const service=['account','favorites','community','requests','admin','admin-restore','support','security-check'].includes(page);
     const returningHome=el('home-view').hidden&&!service;
     el('home-view').hidden=service;el('service-view').hidden=!service;
     document.querySelectorAll<HTMLElement>('.service-panel').forEach(panel=>panel.hidden=panel.id!==page+'-panel');
@@ -117,10 +118,10 @@ export async function initPortal(){
       (document.getElementById(page)??el('home-view')).scrollIntoView({block:'start',behavior:'instant'});
     });
     document.querySelectorAll<HTMLAnchorElement>('.service-nav a').forEach(link=>{
-      const active=link.hash===location.hash||(page==='admin-restore'&&link.hash==='#admin')||(!service&&link.hash==='#filters');
+      const active=link.hash===location.hash||(['admin-restore','security-check'].includes(page)&&link.hash==='#admin')||(!service&&link.hash==='#filters');
       if(active)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');
     });
-    const titles:Record<string,string>={account:'나의 밥픽',favorites:'내 찜 목록',community:'동네 이야기',requests:'문의·신청',admin:'관리자','admin-restore':'복원하기',support:'고객센터'};
+    const titles:Record<string,string>={account:'나의 밥픽',favorites:'내 찜 목록',community:'동네 이야기',requests:'문의·신청',admin:'관리자','admin-restore':'복원하기',support:'고객센터','security-check':'보안 검사'};
     document.title=service?titles[page]+' · 밥픽':'밥픽 · 오늘은 뭘 먹을까요?';
   }
   window.addEventListener('hashchange',route);
@@ -128,7 +129,7 @@ export async function initPortal(){
   window.addEventListener('identity-changed',()=>{
     if(accountRecovery)route();
     el('request-login').hidden=!!user;el('request-form').hidden=!user;
-    el('request-reload').hidden=!user;el('admin-content').hidden=!admin;el('admin-restore-link').hidden=!admin;
+    el('request-reload').hidden=!user;el('admin-content').hidden=!admin;el('admin-restore-link').hidden=!admin;el('admin-security-link').hidden=!admin;
     const identity=(user?.id??'')+':'+admin;if(location.hash==='#admin'&&adminIdentity!==identity){void loadAdmin();void loadAdminSupport();refreshAdminRecords();}adminIdentity=identity;
   });
   route();await initAuth();

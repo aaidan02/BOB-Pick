@@ -53,9 +53,9 @@ createServer(async(req,res)=>{
   try{
     if(url.pathname==='/health'){send(200,{ok:true});return;}
     if(url.pathname.startsWith('/auth/v1/')){
-      if(['/token','/signup','/recover'].some(path=>url.pathname.endsWith(path)))verifyCaptcha(body.gotrue_meta_security?.captcha_token);
+      if(['/token','/signup','/recover'].some(path=>url.pathname.endsWith(path)))try{verifyCaptcha(body.gotrue_meta_security?.captcha_token);}catch{send(400,{code:'captcha_failed',message:'captcha protection: verification failed'});return;}
       if(url.pathname.endsWith('/recover')){send(200,{});return;}
-      if(url.pathname.endsWith('/token')){const found=users.get(body.email);if(!found||body.password!==passwords.get(body.email)){send(400,{message:'Invalid login credentials',error_description:'Invalid login credentials'});return;}send(200,await session(found));return;}
+      if(url.pathname.endsWith('/token')){const found=users.get(body.email);if(!found||body.password!==passwords.get(body.email)){send(400,{code:'invalid_credentials',message:'Invalid login credentials',error_description:'Invalid login credentials'});return;}send(200,await session(found));return;}
       if(url.pathname.endsWith('/signup')){
         const id=crypto.randomUUID(),created={id,email:body.email,aud:'authenticated',role:'authenticated',user_metadata:body.data??{},app_metadata:{provider:'email'},created_at:new Date().toISOString()};
         await db.query('insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3)',[id,body.email,body.data??{}]);users.set(body.email,created);passwords.set(body.email,body.password);send(200,await session(created));return;
