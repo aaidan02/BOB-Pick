@@ -128,6 +128,17 @@ test('security checks expose missing server protection and throttling instead of
   await page.clock.fastForward(5100);let attempts=0;page.on('request',r=>{if(r.url().includes('/auth/v1/token'))attempts++;});await page.route('**/rest/v1/rpc/is_admin',r=>r.fulfill({json:false}));await page.locator('[data-security-check="invalid"]').click();await expect(page.locator('#security-check-result-invalid')).toContainText('현재 관리자만');expect(attempts).toBe(0);
 });
 
+test('security checks handle hosted Auth legacy numeric codes and request the same API version as normal login',async({page})=>{
+  await login(page,'admin@example.test');await page.goto('/#security-check');await page.clock.install();let calls=0;
+  await page.route('**/auth/v1/token**',async route=>{
+    expect(route.request().headers()['x-supabase-api-version']).toBe('2024-01-01');calls++;
+    const response=await route.fetch(),packet=await response.json();
+    await route.fulfill({response,json:{code:response.status(),error_code:packet.code,msg:packet.msg}});
+  });
+  await page.locator('[data-security-check="live"]').click();await expect(page.locator('#security-check-live')).toHaveAttribute('data-check-state','passed');await page.clock.fastForward(5100);
+  await page.locator('[data-security-check="missing"]').click();await expect(page.locator('#security-check-missing')).toHaveAttribute('data-check-state','passed');await expect(page.locator('#security-check-summary')).toHaveText('통과 2 / 4');expect(calls).toBe(3);
+});
+
 test('ordinary members cannot view security tools and logout clears previous administrator check results',async({page,browser})=>{
   await login(page);await page.goto('/#security-check');await expect(page.locator('#security-check-guard')).toBeVisible();await expect(page.locator('#security-check-content')).toBeHidden();
   const context=await browser.newContext(),staff=await context.newPage();try{
